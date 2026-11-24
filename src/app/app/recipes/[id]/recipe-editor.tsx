@@ -41,8 +41,16 @@ export function RecipeEditor({
   const [dirty, setDirty] = useState(false);
   const [quickAdd, setQuickAdd] = useState<{ lineKey: string; name: string } | null>(null);
   const [version, setVersion] = useState(recipe.updatedAt);
+  const saving = useRef(false); // set at once on click, before React re-renders the button as busy
+  const [focusId, setFocusId] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const touch = () => { setDirty(true); setSaved(false); };
+
+  useEffect(() => {
+    if (!focusId) return;
+    document.getElementById(focusId)?.focus();
+    setFocusId(null);
+  }, [focusId]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -100,6 +108,7 @@ export function RecipeEditor({
   };
 
   const save = () => {
+    if (saving.current) return;
     setError(null);
     const empty = lines.filter((l) => !l.source);
     if (empty.length && empty.length !== lines.length) return setError("Pick an ingredient on every line, or remove the empty ones.");
@@ -107,6 +116,7 @@ export function RecipeEditor({
     if (noQty >= 0) return setError(`Enter a quantity for ingredient ${noQty + 1}, or remove it.`);
     const pricePence = price.trim() ? Math.round(Number(price) * 100) : null;
     if (price.trim() && !(pricePence! >= 0)) return setError("Enter the price as a number, like 8.50.");
+    saving.current = true;
     start(async () => {
       const res = await saveRecipeAction({
         recipeId: recipe.id,
@@ -120,6 +130,7 @@ export function RecipeEditor({
           skillRating: skill || null, timeRating: time || null, status, pricePence,
         },
       });
+      saving.current = false;
       if (res.ok) { setVersion(res.value!); setDirty(false); setSaved(true); } else setError(res.error);
     });
   };
@@ -203,7 +214,7 @@ export function RecipeEditor({
                 return (
                   <li key={l.key} className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-[1fr_110px_80px_auto] sm:items-start">
                     <div className="min-w-0">
-                      <Combobox label={`Ingredient ${i + 1}`} options={options} value={l.source} placeholder="Find a product or batch recipe"
+                      <Combobox id={`ing-${l.key}`} label={`Ingredient ${i + 1}`} options={options} value={l.source} placeholder="Find a product or batch recipe"
                         onChange={(v) => setLine(i, { source: v, unit: v.startsWith("r:") ? (batches.find((x) => `r:${x.id}` === v)?.yieldUnit ?? "g") : (productMap.get(v.slice(2))?.baseUnit ?? "g") })}
                         onCreate={(text) => setQuickAdd({ lineKey: l.key, name: text })} createLabel={(t) => `Add "${t}" as a new product`} />
                       <p className="mt-1 truncate text-xs text-text-muted">
@@ -232,7 +243,7 @@ export function RecipeEditor({
                 );
               })}
             </ol>
-            <Button type="button" variant="ghost" className="mt-3" onClick={() => { setLines((ls) => [...ls, { key: key(), source: null, quantity: "", unit: "g" }]); touch(); }}>
+            <Button type="button" variant="ghost" className="mt-3" onClick={() => { const k = key(); setLines((ls) => [...ls, { key: k, source: null, quantity: "", unit: "g" }]); setFocusId(`ing-${k}`); touch(); }}>
               <Plus aria-hidden />Add ingredient
             </Button>
           </Card>
@@ -255,7 +266,7 @@ export function RecipeEditor({
                 </li>
               ))}
             </ol>
-            <Button type="button" variant="ghost" className="mt-3" onClick={() => { setMethod((m) => [...m, ""]); touch(); }}><Plus aria-hidden />Add step</Button>
+            <Button type="button" variant="ghost" className="mt-3" onClick={() => { setMethod((m) => [...m, ""]); setFocusId(`m-${method.length}`); touch(); }}><Plus aria-hidden />Add step</Button>
           </Card>
         </div>
 

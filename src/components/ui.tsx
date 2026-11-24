@@ -98,7 +98,7 @@ export function AllergenChip({ name, level = "contains", size = "md" }: { name: 
 
 export function DietBadge({ short, name }: { short: string; name: string }) {
   return (
-    <span title={name} aria-label={name} className="inline-grid h-6 min-w-7 place-items-center rounded-sm bg-suitable px-1.5 text-xs font-bold text-on-suitable">
+    <span role="img" title={name} aria-label={name} className="inline-grid h-6 min-w-7 place-items-center rounded-sm bg-suitable px-1.5 text-xs font-bold text-on-suitable">
       {short}
     </span>
   );
@@ -156,7 +156,7 @@ export function Skeleton({ className }: { className?: string }) {
 
 export function ListSkeleton({ rows = 6 }: { rows?: number }) {
   return (
-    <div className="grid gap-3" aria-busy="true" aria-label="Loading">
+    <div className="grid gap-3" role="status" aria-busy="true" aria-label="Loading">
       <Skeleton className="h-8 w-60" />
       {Array.from({ length: rows }, (_, i) => <Skeleton key={i} className="h-14 w-full" />)}
     </div>

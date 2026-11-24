@@ -13,7 +13,7 @@ export function NewMenuButton() {
       <Dialog.Trigger asChild><Button><Plus aria-hidden />New menu</Button></Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-text/40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-bg p-6 shadow-pop">
+        <Dialog.Content onOpenAutoFocus={(e) => { e.preventDefault(); document.getElementById("menu-name")?.focus(); }} className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-bg p-6 shadow-pop">
           <div className="mb-4 flex items-start justify-between">
             <Dialog.Title className="text-lg">New menu</Dialog.Title>
             <Dialog.Close aria-label="Close" className="rounded-sm p-1 text-text-muted hover:bg-surface"><X className="size-5" /></Dialog.Close>

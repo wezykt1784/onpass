@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { SlidersHorizontal, X } from "lucide-react";
 import { allergenNames, dietNames, money, topLevelAllergens } from "@/lib/format";
@@ -14,6 +14,10 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<SnapshotDish | null>(null);
   const top = allergens.filter((a) => !a.parentId);
+  // Dialogs open from plain buttons, so remember where focus was and put it back on close (keyboard and screen reader users keep their place).
+  const lastFocus = useRef<HTMLElement | null>(null);
+  const remember = () => { lastFocus.current = document.activeElement as HTMLElement | null; };
+  const restore = (e: Event) => { e.preventDefault(); lastFocus.current?.focus(); };
   const filtering = avoid.length > 0 || want.length > 0;
 
   const fits = useMemo(() => (d: SnapshotDish) => {
@@ -42,7 +46,7 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
 
         <div className="sticky top-0 z-10 border-b border-border bg-bg px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <Button variant="secondary" size="lg" onClick={() => setOpen(true)} aria-haspopup="dialog">
+            <Button variant="secondary" size="lg" onClick={() => { remember(); setOpen(true); }} aria-haspopup="dialog">
               <SlidersHorizontal aria-hidden />{filtering ? `Filters on (${avoid.length + want.length})` : "Filter for allergies"}
             </Button>
             <p className="text-sm text-text-muted" aria-live="polite">{filtering ? `${shown} of ${all.length} dishes` : `${all.length} dishes`}</p>
@@ -71,7 +75,7 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
                     <li key={i} className="mx-4 my-2 rounded-md bg-surface px-3 py-2 text-sm italic">{r.text}</li>
                   ) : (
                     <li key={r.dish.recipeId} className="border-t border-border">
-                      <button className="block w-full px-4 py-4 text-left hover:bg-surface-sunken" onClick={() => setDetail(r.dish)}>
+                      <button className="block w-full px-4 py-4 text-left hover:bg-surface-sunken" aria-haspopup="dialog" onClick={() => { remember(); setDetail(r.dish); }}>
                         <span className="flex justify-between gap-3 font-bold"><span>{r.dish.name}</span><span className="tabular">{money(r.dish.pricePence)}</span></span>
                         {r.dish.description && <span className="mt-1 block text-sm text-text-muted">{r.dish.description}{r.dish.kcal != null ? ` · ${r.dish.kcal} kcal` : ""}</span>}
                         <span className="mt-2 flex flex-wrap gap-1.5">
@@ -94,7 +98,7 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-text/40" />
-          <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88vh] max-w-xl overflow-auto rounded-t-lg bg-bg p-5 shadow-pop sm:bottom-auto sm:top-10 sm:rounded-lg">
+          <Dialog.Content onCloseAutoFocus={restore} className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88vh] max-w-xl overflow-auto rounded-t-lg bg-bg p-5 shadow-pop sm:bottom-auto sm:top-10 sm:rounded-lg">
             <div className="mb-3 flex items-start justify-between">
               <Dialog.Title className="text-lg">Filter the menu</Dialog.Title>
               <Dialog.Close aria-label="Close" className="rounded-sm p-1 text-text-muted hover:bg-surface"><X className="size-6" /></Dialog.Close>
@@ -140,7 +144,7 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-text/40" />
           {detail && (
-            <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88vh] max-w-xl overflow-auto rounded-t-lg bg-bg p-5 shadow-pop sm:bottom-auto sm:top-10 sm:rounded-lg">
+            <Dialog.Content onCloseAutoFocus={restore} className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88vh] max-w-xl overflow-auto rounded-t-lg bg-bg p-5 shadow-pop sm:bottom-auto sm:top-10 sm:rounded-lg">
               <div className="mb-2 flex items-start justify-between gap-3">
                 <Dialog.Title className="text-lg">{detail.name}</Dialog.Title>
                 <Dialog.Close aria-label="Close" className="rounded-sm p-1 text-text-muted hover:bg-surface"><X className="size-6" /></Dialog.Close>

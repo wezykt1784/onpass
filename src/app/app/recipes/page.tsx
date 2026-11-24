@@ -61,8 +61,8 @@ export default async function RecipesPage({ searchParams }: PageProps<"/app/reci
                   <tr key={r.id} className="border-b border-border last:border-0 hover:bg-surface-sunken">
                     <td className="px-4 py-3">
                       <Link href={`/app/recipes/${r.id}`} className="font-semibold hover:underline">{r.name}</Link>
-                      <div className="flex items-center gap-2 font-mono text-xs text-text-muted">
-                        {r.code}{r.status === "draft" && <Pill tone="draft">Draft</Pill>}
+                      <div className="flex items-center gap-2 text-xs text-text-muted">
+                        <span className="font-mono">{r.code}</span>{r.status === "draft" && <Pill tone="draft">Draft</Pill>}
                       </div>
                     </td>
                     <td className="px-4 py-3"><Pill tone={r.kind}>{r.kind === "batch" ? `Batch${r.yieldQty ? `, ${r.yieldQty} ${r.yieldUnit}` : ""}` : "Dish"}</Pill></td>
