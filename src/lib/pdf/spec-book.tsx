@@ -31,13 +31,13 @@ function registerFonts() {
 }
 
 const s = StyleSheet.create({
-  page: { fontFamily: "Manrope", fontSize: 9, color: c.text, paddingBottom: 30 },
-  header: { backgroundColor: c.ink, color: c["on-ink"], flexDirection: "row", alignItems: "center", paddingVertical: 9, paddingHorizontal: 22, gap: 8 },
+  page: { fontFamily: "Manrope", fontSize: 9, color: c.text, paddingTop: 34, paddingHorizontal: 34, paddingBottom: 52 },
+  header: { backgroundColor: c.ink, color: c["on-ink"], flexDirection: "row", alignItems: "center", paddingVertical: 9, paddingHorizontal: 14, gap: 8, borderRadius: 4 },
   headerTitle: { fontSize: 13, fontWeight: 700, flexShrink: 1 },
   code: { fontFamily: "Plex Mono", fontSize: 8.5 },
   chip: { borderWidth: 1, borderColor: c["on-ink"], borderRadius: 99, paddingVertical: 2, paddingHorizontal: 7, fontSize: 7.5, fontWeight: 600 },
   orgName: { marginLeft: "auto", fontSize: 8.5, fontWeight: 600 },
-  body: { flexDirection: "row", gap: 18, paddingHorizontal: 22, paddingTop: 14 },
+  body: { flexDirection: "row", gap: 18, paddingTop: 14 },
   grow: { flexGrow: 1 },
   col: { flex: 1 },
   photo: { width: 190, height: 140, objectFit: "cover", borderRadius: 6, marginBottom: 10 },
@@ -50,10 +50,10 @@ const s = StyleSheet.create({
   cQty: { flex: 1, textAlign: "right" },
   step: { flexDirection: "row", gap: 6, marginBottom: 5, lineHeight: 1.45 },
   stepN: { width: 12, fontWeight: 700 },
-  bars: { flexDirection: "row", gap: 12, paddingHorizontal: 22, marginTop: 12 },
+  bars: { flexDirection: "row", gap: 12, marginTop: 12 },
   bar: { borderRadius: 5, paddingVertical: 7, paddingHorizontal: 9 },
   barText: { fontSize: 9.5, fontWeight: 700, lineHeight: 1.35 },
-  footer: { position: "absolute", bottom: 12, left: 22, right: 22, flexDirection: "row", justifyContent: "space-between", fontSize: 7, color: c["text-muted"] },
+  footer: { position: "absolute", bottom: 34, left: 34, right: 34, flexDirection: "row", justifyContent: "space-between", fontSize: 7, color: c["text-muted"] },
   batchTitle: { fontSize: 11, fontWeight: 700, marginBottom: 2 },
   batchMeta: { fontSize: 8, color: c["text-muted"], marginBottom: 6 },
 });

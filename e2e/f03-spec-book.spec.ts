@@ -52,4 +52,29 @@ test.describe("F03 generate the PDF spec book", () => {
     const text = pdfText(await res.body());
     expect(text).toContain("Allergen data missing for: CHIPOTLE PASTE 1KG");
   });
+
+  test("F03-E4 nothing prints within 10 mm of the paper edge (office printers clip it)", async ({ page }) => {
+    const res = await page.request.get("/api/spec-book/me-winter");
+    const { execFileSync } = await import("node:child_process");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spec-pdf-"));
+    fs.writeFileSync(path.join(dir, "b.pdf"), await res.body());
+    // 72 dpi: 1 px = 1 pt; 10 mm = 28 pt. Render pages 1-4 as greyscale PGM and look at the border strip.
+    execFileSync("pdftoppm", ["-r", "72", "-gray", "-f", "1", "-l", "4", path.join(dir, "b.pdf"), path.join(dir, "p")]);
+    const margin = 27;
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".pgm")).sort()) {
+      const buf = fs.readFileSync(path.join(dir, f));
+      const header = buf.toString("latin1", 0, 40).split(/\s+/);
+      const [w, h] = [Number(header[1]), Number(header[2])];
+      const data = buf.subarray(buf.length - w * h);
+      let ink = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const inBorder = x < margin || x >= w - margin || y < margin || y >= h - margin;
+        if (inBorder && data[y * w + x] < 230) ink++;
+      }
+      expect(ink, `${f}: dark pixels in the 10 mm border`).toBe(0);
+    }
+  });
 });
