@@ -266,9 +266,9 @@ export async function setRecipePhoto(recipeId: string, photoPath: string | null)
   const u = await requireEditor();
   const r = store().recipes.find((x) => x.id === recipeId);
   if (!r) throw new DataError("That recipe no longer exists.");
+  // Photos save on their own and don't bump updatedAt, so an open editor doesn't see a false conflict.
+  void u;
   r.photoPath = photoPath;
-  r.updatedAt = nowIso();
-  r.updatedBy = u.id;
   save();
   return r;
 }

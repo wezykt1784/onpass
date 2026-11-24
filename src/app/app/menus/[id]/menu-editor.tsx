@@ -129,10 +129,10 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
           className={`rounded-lg border bg-bg ${drag?.s === si && drag.c === null ? "border-focus" : "border-border"}`}
           onDragOver={(e) => { if (drag && drag.c === null) e.preventDefault(); }}
           onDrop={() => { if (drag && drag.c === null && drag.s !== si) update((r) => move(r, drag.s, si)); setDrag(null); }}>
-          <div className="flex items-center gap-2 border-b border-border border-l-4 border-l-ink bg-surface-sunken p-3">
+          <div className="flex items-center gap-1 border-b border-border border-l-4 border-l-ink bg-surface-sunken p-2 sm:gap-2 sm:p-3">
             <span draggable onDragStart={() => setDrag({ s: si, c: null })} onDragEnd={() => setDrag(null)} className="cursor-grab text-text-muted" aria-hidden><GripVertical className="size-5" /></span>
             <label htmlFor={`sec-${sec.id}`} className="sr-only">Section name</label>
-            <input id={`sec-${sec.id}`} className={`${inputClass} font-bold`} value={sec.title ?? ""} placeholder="Section name"
+            <input id={`sec-${sec.id}`} className={`${inputClass} min-w-0 flex-1 font-bold`} value={sec.title ?? ""} placeholder="Section name"
               onChange={(e) => update((r) => { r[si].title = e.target.value; return r; })} />
             <Button variant="ghost" size="sm" aria-label="Move section up" disabled={si === 0} onClick={() => update((r) => move(r, si, si - 1))}><ArrowUp aria-hidden /></Button>
             <Button variant="ghost" size="sm" aria-label="Move section down" disabled={si === rows.length - 1} onClick={() => update((r) => move(r, si, si + 1))}><ArrowDown aria-hidden /></Button>
@@ -142,7 +142,7 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
               update((r) => r.filter((_, i) => i !== si));
             }}><Trash2 aria-hidden /></Button>
           </div>
-          <ol className="grid gap-2 p-3">
+          <ol className="grid gap-2 p-2 sm:p-3">
             {(sec.children ?? []).map((row, ci) => {
               const d = row.recipeId ? byId.get(row.recipeId) : undefined;
               const isDrop = drag && drag.c !== null && drag.s === si && drag.c !== ci;
@@ -160,13 +160,13 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
                     });
                     setDrag(null);
                   }}
-                  className={`flex flex-wrap items-center gap-2 rounded-md border border-border p-2 sm:flex-nowrap ${row.kind === "info" ? "italic text-text-muted" : ""} ${isDrop ? "shadow-[0_-3px_0_var(--color-focus)]" : ""}`}>
+                  className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-border p-2 sm:flex-nowrap ${row.kind === "info" ? "italic text-text-muted" : ""} ${isDrop ? "shadow-[0_-3px_0_var(--color-focus)]" : ""}`}>
                   <GripVertical aria-hidden className="size-5 shrink-0 cursor-grab text-text-muted" />
                   {row.kind === "info" ? (
                     <>
                       <Info aria-hidden className="size-4 shrink-0" />
                       <label htmlFor={`info-${row.id}`} className="sr-only">Message</label>
-                      <input id={`info-${row.id}`} className={inputClass} value={row.title ?? ""} placeholder="A message for guests, e.g. an offer"
+                      <input id={`info-${row.id}`} className={`${inputClass} min-w-0 flex-1`} value={row.title ?? ""} placeholder="A message for guests, e.g. an offer"
                         onChange={(e) => update((r) => { r[si].children![ci].title = e.target.value; return r; })} />
                     </>
                   ) : (

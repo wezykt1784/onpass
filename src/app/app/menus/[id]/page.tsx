@@ -17,7 +17,7 @@ export default async function MenuPage({ params }: PageProps<"/app/menus/[id]">)
       <Link href="/app/menus" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-text-muted hover:text-text">
         <ChevronLeft aria-hidden className="size-4" />Menus
       </Link>
-      <MenuEditor key={menu.updatedAt} menu={menu} orgSlug={org.slug}
+      <MenuEditor key={menu.id} menu={menu} orgSlug={org.slug}
         dishes={dishes.map(({ recipe, rollup }) => ({
           id: recipe.id, name: recipe.name, code: recipe.code, pricePence: recipe.pricePence,
           unknown: rollup.unknownProducts.length > 0, contains: rollup.contains,

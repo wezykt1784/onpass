@@ -144,7 +144,7 @@ function SpecBook({ d }: { d: Data }) {
           return [
             <Page key={r.id} size="A4" orientation="landscape" style={s.page}>
               <View style={s.header}>
-                <Text style={s.headerTitle}>{sec.title} // {displayName}</Text>
+                <Text style={s.headerTitle}>{`${sec.title} // ${displayName}`}</Text>
                 {r.code && <Text style={s.code}>{r.code}</Text>}
                 {r.skillRating && <Text style={s.chip}>Skill: {r.skillRating[0].toUpperCase() + r.skillRating.slice(1)}</Text>}
                 {r.timeRating && <Text style={s.chip}>Time: {r.timeRating[0].toUpperCase() + r.timeRating.slice(1)}</Text>}
@@ -152,6 +152,7 @@ function SpecBook({ d }: { d: Data }) {
               </View>
               <View style={[s.body, s.grow]}>
                 <View style={s.col}>
+                  {/* eslint-disable-next-line jsx-a11y/alt-text -- PDF images have no alt attribute */}
                   {photo && <Image style={s.photo} src={photo} />}
                   <Text style={s.panelHead}>Ingredients</Text>
                   <Ingredients r={r} d={d} />
@@ -179,7 +180,7 @@ function SpecBook({ d }: { d: Data }) {
               ? [
                   <Page key={`${r.id}-b`} size="A4" orientation="landscape" style={s.page}>
                     <View style={s.header} fixed>
-                      <Text style={s.headerTitle}>Batch recipes // {displayName}</Text>
+                      <Text style={s.headerTitle}>{`Batch recipes // ${displayName}`}</Text>
                       <Text style={s.orgName}>{d.org.name}</Text>
                     </View>
                     {batches.map((b) => (

@@ -28,7 +28,7 @@ export default async function RecipePage({ params }: PageProps<"/app/recipes/[id
         <ChevronLeft aria-hidden className="size-4" />Recipes
       </Link>
       <RecipeEditor
-        key={recipe.updatedAt}
+        key={recipe.id}
         recipe={recipe}
         products={products}
         batches={batches}

@@ -39,6 +39,7 @@ export function RecipeEditor({
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [quickAdd, setQuickAdd] = useState<{ lineKey: string; name: string } | null>(null);
+  const [version, setVersion] = useState(recipe.updatedAt);
   const [pending, start] = useTransition();
   const touch = () => { setDirty(true); setSaved(false); };
 
@@ -72,12 +73,8 @@ export function RecipeEditor({
       subRecipeId: l.source!.startsWith("r:") ? l.source!.slice(2) : null,
     })),
   };
-  const rollup = useMemo(() => {
-    const rmap = new Map(batches.map((b) => [b.id, b]));
-    rmap.set(draft.id, draft);
-    return computeRollup(draft.id, rmap, productMap);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(draft.lines), JSON.stringify(overrides), yieldQty, yieldUnit, productMap, batches]);
+  // Cheap at recipe size, so it runs on every render rather than being memoised.
+  const rollup = computeRollup(draft.id, new Map([...batches.map((b) => [b.id, b] as const), [draft.id, draft] as const]), productMap);
 
   const contains = allergenNames(rollup.contains, allergens);
   const may = allergenNames(rollup.mayContain, allergens);
@@ -105,12 +102,14 @@ export function RecipeEditor({
     setError(null);
     const empty = lines.filter((l) => !l.source);
     if (empty.length && empty.length !== lines.length) return setError("Pick an ingredient on every line, or remove the empty ones.");
+    const noQty = lines.findIndex((l) => l.source && !(Number(l.quantity) > 0));
+    if (noQty >= 0) return setError(`Enter a quantity for ingredient ${noQty + 1}, or remove it.`);
     const pricePence = price.trim() ? Math.round(Number(price) * 100) : null;
     if (price.trim() && !(pricePence! >= 0)) return setError("Enter the price as a number, like 8.50.");
     start(async () => {
       const res = await saveRecipeAction({
         recipeId: recipe.id,
-        expectedUpdatedAt: recipe.updatedAt,
+        expectedUpdatedAt: version,
         lines: draft.lines.map(({ productId, subRecipeId, quantity, unit }) => ({ productId, subRecipeId, quantity, unit })),
         overrides,
         details: {
@@ -120,7 +119,7 @@ export function RecipeEditor({
           skillRating: skill || null, timeRating: time || null, status, pricePence,
         },
       });
-      if (res.ok) { setDirty(false); setSaved(true); } else setError(res.error);
+      if (res.ok) { setVersion(res.value!); setDirty(false); setSaved(true); } else setError(res.error);
     });
   };
 
@@ -137,7 +136,7 @@ export function RecipeEditor({
             <RagChip label="Skill" value={skill || null} /><RagChip label="Time" value={time || null} />
           </div>
           <h1 className="text-xl break-words">{name || "Untitled recipe"}</h1>
-          <p className="mt-1 text-sm text-text-muted">Last saved {dateTimeUk(recipe.updatedAt)}{updatedBy ? ` by ${updatedBy}` : ""}</p>
+          <p className="mt-1 text-sm text-text-muted">Last saved {dateTimeUk(version)}{updatedBy ? ` by ${updatedBy}` : ""}</p>
         </div>
         <div className="flex items-center gap-3">
           <span aria-live="polite" className="text-sm text-text-muted">{saved ? "Saved" : dirty ? "Unsaved changes" : ""}</span>
