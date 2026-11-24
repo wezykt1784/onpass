@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowDown, ArrowUp, Camera, Link2, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { removeRecipePhotoAction, saveRecipeAction, uploadRecipePhotoAction } from "@/lib/actions";
 import { computeRollup, toBase, toYield } from "@/lib/rollup";
+import { photoUrl } from "@/lib/supabase/env";
 import { allergenNames, dateTimeUk, dietNames, money } from "@/lib/format";
 import type { Allergen, Diet, MethodStep, Product, Rag, Recipe, Supplier, Unit } from "@/lib/types";
 import { Combobox, type Option } from "@/components/combobox";
@@ -363,7 +364,7 @@ function PhotoCard({ recipe }: { recipe: Recipe }) {
       <h2 className="mb-3 text-lg">Photo</h2>
       {recipe.photoPath ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={`/api/files/${recipe.photoPath}`} alt={`${recipe.name}, as served`} className="mb-3 aspect-[4/3] w-full rounded-md object-cover" />
+        <img src={photoUrl(recipe.photoPath)!} alt={`${recipe.name}, as served`} className="mb-3 aspect-[4/3] w-full rounded-md object-cover" />
       ) : (
         <button type="button" onClick={() => input.current?.click()}
           className="mb-3 grid aspect-[4/3] w-full place-items-center content-center gap-2 rounded-md border-2 border-dashed border-border text-sm font-semibold text-text-muted hover:bg-surface">

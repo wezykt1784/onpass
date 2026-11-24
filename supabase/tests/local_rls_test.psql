@@ -1,0 +1,48 @@
+\set ON_ERROR_STOP 0
+set search_path = spec, public;
+insert into auth.users values ('00000000-0000-0000-0000-00000000000a','chef@a.test'),('00000000-0000-0000-0000-00000000000b','site@a.test'),('00000000-0000-0000-0000-00000000000c','chef@b.test');
+select bootstrap_org('Pub A','pub-a','chef@a.test') as org_a \gset
+select bootstrap_org('Pub B','pub-b','chef@b.test') as org_b \gset
+insert into profiles (id,email) values ('00000000-0000-0000-0000-00000000000b','site@a.test');
+insert into memberships (org_id,user_id,role) values (:'org_a','00000000-0000-0000-0000-00000000000b','viewer');
+grant usage on schema extensions to authenticated;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+\echo == A: create product + batch + dish via app paths
+insert into products (org_id,name,base_unit,allergen_status,nutrition_per_100,pack_size,pack_cost_pence) values (:'org_a','MAYO 5KG','g','complete','{"kcal":680}',5000,1395) returning id as p_mayo \gset
+insert into product_allergens select :'p_mayo', id, 'contains' from allergens where code='eggs' and org_id is null;
+insert into recipes (org_id,kind,name,yield_qty,yield_unit) values (:'org_a','batch','Lime mayo',1000,'g') returning id as b1, updated_at as b1_v \gset
+select save_recipe(:'b1', :'b1_v', '{"name":"Lime mayo","yieldQty":1000,"yieldUnit":"g","method":[{"text":"WHISK"}],"status":"approved"}', jsonb_build_array(jsonb_build_object('productId',:'p_mayo','quantity',950,'unit','g')), '[]') as b1_v2 \gset
+insert into recipes (org_id,kind,name) values (:'org_a','dish','Squid') returning id as d1, updated_at as d1_v \gset
+select save_recipe(:'d1', :'d1_v', '{"name":"Squid","code":"SP-1","pricePence":800,"skillRating":"amber"}', jsonb_build_array(jsonb_build_object('subRecipeId',:'b1','quantity',40,'unit','g')), jsonb_build_array(jsonb_build_object('allergenId',(select id from allergens where code='fish' and org_id is null),'level','may_contain','reason','shared fryer'))) as d1_v2 \gset
+select r.name, (select string_agg(code,',') from allergens where id = any(contains)) c, (select string_agg(code,',') from allergens where id = any(may_contain)) m, nutrition_per_portion from recipe_rollups ru join recipes r on r.id=ru.recipe_id order by r.kind;
+\echo == stale save (expect conflict naming the chef)
+select save_recipe(:'d1', :'d1_v', '{"name":"Squid old"}', '[]', '[]');
+\echo == loop (expect refusal)
+select save_recipe(:'b1', :'b1_v2', '{"name":"Lime mayo","yieldQty":1000,"yieldUnit":"g"}', jsonb_build_array(jsonb_build_object('subRecipeId',:'d1','quantity',1,'unit','g')), '[]');
+\echo == product change flows up to the dish (add mustard)
+insert into product_allergens select :'p_mayo', id, 'contains' from allergens where code='mustard' and org_id is null;
+select (select string_agg(code,',') from allergens where id = any(contains)) from recipe_rollups where recipe_id = :'d1';
+\echo == menu rows
+insert into menus (org_id,name) values (:'org_a','Winter') returning id as m1 \gset
+select save_menu_rows(:'m1', jsonb_build_array(jsonb_build_object('title','Small plates','children',jsonb_build_array(jsonb_build_object('kind','item','recipeId',:'d1'),jsonb_build_object('kind','info','title','3 for 18')))));
+select kind, title, sort, parent_row_id is not null as child from menu_rows where menu_id=:'m1' order by parent_row_id nulls first, sort;
+\echo == B sees nothing of A
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select (select count(*) from recipes) recipes, (select count(*) from products) products, (select count(*) from menus) menus;
+\echo == B cannot save A recipe (expect error or no row)
+select save_recipe(:'d1', :'d1_v2', '{"name":"hacked"}', '[]', '[]');
+\echo == A site chef can read, cannot save
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select count(*) as site_reads from recipes;
+select save_recipe(:'d1', :'d1_v2', '{"name":"site edit"}', '[]', '[]');
+\echo == anon: guest menu works, tables do not
+reset role; set role anon; reset request.jwt.claim.sub;
+select public_org('pub-a')->>'name' as org, jsonb_array_length(public_menu('pub-a', :'m1')->'dishes') as dishes, public_menu('pub-b', :'m1') is null as other_org_blocked;
+select count(*) from spec.recipes;
+reset role;
+select name from spec.recipes where id=:'d1';
+\echo == anon and authenticated cannot call bootstrap_org or save_recipe
+set role anon; select spec.bootstrap_org('x','x-x','chef@a.test'); select spec.save_recipe(null,null,null,null,null);
+reset role; set role authenticated; set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a'; select spec.bootstrap_org('x','x-x','chef@a.test');
+reset role;

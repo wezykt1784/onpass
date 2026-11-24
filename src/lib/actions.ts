@@ -1,12 +1,12 @@
 "use server";
 // Server actions. Each one checks the user (inside the data layer), validates, writes, then refreshes the page.
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { refresh } from "next/cache";
-import fs from "node:fs";
-import path from "node:path";
+import { z } from "zod";
 import * as data from "./data";
-import { uploadsDir } from "./data/store";
+import { useSupabase } from "./supabase/env";
+import { rateLimit } from "./rate-limit";
 import type { MenuRow, Product, Recipe, RecipeLine } from "./types";
 
 export type ActionResult<T = unknown> = { ok: true; value?: T } | { ok: false; error: string };
@@ -17,26 +17,63 @@ async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
     refresh();
     return { ok: true, value };
   } catch (e) {
-    if (e instanceof data.DataError) return { ok: false, error: e.message };
+    if (data.isDataError(e)) return { ok: false, error: e.message };
     console.error(e);
     return { ok: false, error: "Something went wrong saving that. Try again, and if it keeps happening tell the central team." };
   }
 }
 
-// ---------- session (fake until /replica-backend) ----------
+async function clientIp() {
+  const h = await headers();
+  return h.get("x-nf-client-connection-ip") ?? h.get("x-forwarded-for")?.split(",")[0].trim() ?? "local";
+}
+
+// ---------- auth ----------
+
+const emailSchema = z.email("Enter a valid email address.").max(200);
 
 export async function signIn(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
-  const email = String(form.get("email") ?? "").trim().toLowerCase();
-  const users = await data.listUsers();
-  const u = users.find((x) => x.email === email);
-  if (!u) return { ok: false, error: "We don't recognise that email. Check it, or ask your admin to invite you." };
-  (await cookies()).set("spec_user", u.id, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
-  redirect(u.role === "viewer" ? `/c/demo` : "/app");
+  const email = emailSchema.safeParse(String(form.get("email") ?? "").trim().toLowerCase());
+  if (!email.success) return { ok: false, error: email.error.issues[0].message };
+  if (!rateLimit(`login:${await clientIp()}`, 10, 15 * 60_000) || !rateLimit(`login:${email.data}`, 8, 15 * 60_000))
+    return { ok: false, error: "Too many attempts. Wait 15 minutes, or reset your password." };
+  try {
+    await data.signInWithPassword(email.data, String(form.get("password") ?? ""));
+  } catch (e) {
+    return { ok: false, error: data.isDataError(e) ? e.message : "Sign in failed. Try again." };
+  }
+  const u = await data.currentUser();
+  if (!u) redirect("/no-access");
+  const org = await data.getOrg();
+  redirect(u.role === "viewer" ? `/c/${org.slug}` : "/app");
 }
 
 export async function signOut() {
-  (await cookies()).delete("spec_user");
+  await data.signOutEverywhere();
   redirect("/login");
+}
+
+export async function requestPasswordReset(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const email = emailSchema.safeParse(String(form.get("email") ?? "").trim().toLowerCase());
+  if (!email.success) return { ok: false, error: email.error.issues[0].message };
+  if (!rateLimit(`reset:${await clientIp()}`, 5, 60 * 60_000) || !rateLimit(`reset:${email.data}`, 3, 60 * 60_000))
+    return { ok: false, error: "Too many reset requests. Try again in an hour." };
+  const h = await headers();
+  const origin = h.get("origin") ?? `https://${h.get("host")}`;
+  await data.sendPasswordReset(email.data, `${origin}/auth/callback?next=/auth/set-password`);
+  return { ok: true };
+}
+
+export async function setPassword(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const pw = String(form.get("password") ?? "");
+  if (pw.length < 10) return { ok: false, error: "Use at least 10 characters." };
+  if (pw !== String(form.get("confirm") ?? "")) return { ok: false, error: "The two passwords don't match." };
+  try {
+    await data.setNewPassword(pw);
+  } catch (e) {
+    return { ok: false, error: data.isDataError(e) ? e.message : "That password couldn't be saved." };
+  }
+  redirect("/app");
 }
 
 // ---------- recipes ----------
@@ -55,32 +92,21 @@ export async function createRecipeAction(_prev: ActionResult | null, form: FormD
 export async function saveRecipeAction(input: {
   recipeId: string;
   expectedUpdatedAt: string;
-  details: Parameters<typeof data.updateRecipe>[1];
+  details: Parameters<typeof data.saveRecipe>[2]["details"];
   lines: Omit<RecipeLine, "id" | "sort">[];
   overrides: Recipe["overrides"];
 }): Promise<ActionResult<string>> {
-  return run(async () => {
-    // Lines first, then details; each bumps updatedAt, so carry it forward.
-    let r = await data.saveRecipeLines(input.recipeId, input.lines, input.expectedUpdatedAt);
-    r = await data.setAllergenOverrides(input.recipeId, input.overrides, r.updatedAt);
-    r = await data.updateRecipe(input.recipeId, input.details, r.updatedAt);
-    return r.updatedAt;
-  });
+  return run(() => data.saveRecipe(input.recipeId, input.expectedUpdatedAt, { details: input.details, lines: input.lines, overrides: input.overrides }));
 }
 
 const MAX_PHOTO = 4 * 1024 * 1024;
 export async function uploadRecipePhotoAction(recipeId: string, form: FormData): Promise<ActionResult> {
   return run(async () => {
-    await data.requireEditor();
     const file = form.get("photo");
     if (!(file instanceof File) || file.size === 0) throw new data.DataError("Choose a photo first.");
     if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new data.DataError("Use a JPG, PNG or WebP photo.");
     if (file.size > MAX_PHOTO) throw new data.DataError("That photo is over 4 MB even after resizing. Try a smaller one.");
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const name = `${recipeId}-${Date.now()}.${ext}`;
-    fs.writeFileSync(path.join(uploadsDir, name), Buffer.from(await file.arrayBuffer()));
-    await data.setRecipePhoto(recipeId, name);
+    await data.uploadRecipePhoto(recipeId, file);
   });
 }
 
@@ -125,4 +151,8 @@ export async function copyMenuAction(menuId: string): Promise<ActionResult> {
   });
   if (res.ok) redirect(`/app/menus/${newId}`);
   return res;
+}
+
+export async function isDemoMode() {
+  return !useSupabase;
 }

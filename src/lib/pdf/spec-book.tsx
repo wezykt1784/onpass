@@ -7,6 +7,7 @@ import tokens from "@/design/tokens.json";
 import { allergenNames, dateUk, dietNames, qty } from "../format";
 import type { getSpecBookData } from "../data";
 import { uploadsDir } from "../data/store";
+import { photoUrl, useSupabase } from "../supabase/env";
 import type { Recipe } from "../types";
 
 type Data = NonNullable<Awaited<ReturnType<typeof getSpecBookData>>>;
@@ -57,11 +58,27 @@ const s = StyleSheet.create({
   batchMeta: { fontSize: 8, color: c["text-muted"], marginBottom: 6 },
 });
 
-function photoSrc(p: string | null) {
-  if (!p || !/\.(jpg|png)$/.test(p)) return null;
-  const file = path.join(uploadsDir, p);
-  if (!fs.existsSync(file)) return null;
-  return { data: fs.readFileSync(file), format: p.endsWith(".png") ? ("png" as const) : ("jpg" as const) };
+type Photo = { data: Buffer; format: "png" | "jpg" };
+
+/** Load every dish photo once, before rendering (react-pdf can't await inside the tree). */
+async function loadPhotos(d: Data): Promise<Map<string, Photo>> {
+  const out = new Map<string, Photo>();
+  const paths = d.sections.flatMap((s) => s.dishes.map((x) => x.recipe.photoPath)).filter((p): p is string => !!p && /\.(jpg|png)$/.test(p));
+  await Promise.all(paths.map(async (p) => {
+    const format = p.endsWith(".png") ? ("png" as const) : ("jpg" as const);
+    try {
+      if (useSupabase) {
+        const res = await fetch(photoUrl(p)!);
+        if (res.ok) out.set(p, { data: Buffer.from(await res.arrayBuffer()), format });
+      } else {
+        const file = path.join(uploadsDir, p);
+        if (fs.existsSync(file)) out.set(p, { data: fs.readFileSync(file), format });
+      }
+    } catch {
+      // A missing photo shouldn't stop the spec book; the page prints without it.
+    }
+  }));
+  return out;
 }
 
 function Ingredients({ r, d }: { r: Recipe; d: Data }) {
@@ -117,7 +134,7 @@ function Footer({ printed, label }: { printed: string; label: string }) {
   );
 }
 
-function SpecBook({ d }: { d: Data }) {
+function SpecBook({ d, photos }: { d: Data; photos: Map<string, Photo> }) {
   const printed = dateUk(new Date().toISOString());
   const book = d.menu.displayName ? `${d.menu.name}` : d.menu.name;
   return (
@@ -140,7 +157,7 @@ function SpecBook({ d }: { d: Data }) {
           const may = allergenNames(rollup.mayContain, d.allergens);
           const diets = dietNames(rollup.diets, d.diets);
           const unknown = rollup.unknownProducts.map((id) => d.products.get(id)?.name ?? "");
-          const photo = photoSrc(r.photoPath);
+          const photo = r.photoPath ? photos.get(r.photoPath) ?? null : null;
           return [
             <Page key={r.id} size="A4" orientation="landscape" style={s.page}>
               <View style={s.header}>
@@ -210,5 +227,6 @@ function SpecBook({ d }: { d: Data }) {
 
 export async function renderSpecBook(d: Data): Promise<Buffer> {
   registerFonts();
-  return renderToBuffer(<SpecBook d={d} />);
+  const photos = await loadPhotos(d);
+  return renderToBuffer(<SpecBook d={d} photos={photos} />);
 }

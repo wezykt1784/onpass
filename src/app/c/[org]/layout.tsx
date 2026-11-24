@@ -2,13 +2,13 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BookOpen } from "lucide-react";
-import { currentUser, getOrgBySlug } from "@/lib/data";
+import { currentUser, getOrgBySlug, signedInWithoutOrg } from "@/lib/data";
 import { ListSkeleton } from "@/components/ui";
 
 async function Guard({ params, children }: { params: LayoutProps<"/c/[org]">["params"]; children: React.ReactNode }) {
   const { org: slug } = await params;
   const [user, org] = await Promise.all([currentUser(), getOrgBySlug(slug)]);
-  if (!user) redirect("/login");
+  if (!user) redirect((await signedInWithoutOrg()) != null ? "/no-access" : "/login");
   if (!org) redirect("/login");
   return (
     <>

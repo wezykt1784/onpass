@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { buildSnapshot, getOrgBySlug, listAllergens, listDiets } from "@/lib/data";
+import { buildSnapshot, getOrgBySlug, guestLists } from "@/lib/data";
 import { ListSkeleton } from "@/components/ui";
 import { GuestMenu } from "./guest-menu";
 
@@ -11,7 +11,7 @@ async function Menu({ params }: { params: PageProps<"/m/[org]/[menuId]">["params
   const { org: slug, menuId } = await params;
   const org = await getOrgBySlug(slug);
   if (!org) notFound();
-  const [snap, allergens, diets] = await Promise.all([buildSnapshot(menuId), listAllergens(), listDiets()]);
+  const [snap, { allergens, diets }] = await Promise.all([buildSnapshot(menuId, slug), guestLists(slug, menuId)]);
   if (!snap) notFound();
   return <GuestMenu org={org} snap={snap} allergens={allergens} diets={diets} />;
 }

@@ -3,12 +3,13 @@ import { redirect } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { BottomNav, SidebarNav } from "@/components/sidebar";
 import { ListSkeleton } from "@/components/ui";
-import { currentUser, getOrg } from "@/lib/data";
+import { currentUser, getOrg, signedInWithoutOrg } from "@/lib/data";
 import { signOut } from "@/lib/actions";
 
 async function UserBox() {
-  const [user, org] = await Promise.all([currentUser(), getOrg()]);
-  if (!user) redirect("/login");
+  const user = await currentUser();
+  if (!user) redirect((await signedInWithoutOrg()) != null ? "/no-access" : "/login");
+  const org = await getOrg();
   if (user.role === "viewer") redirect(`/c/${org.slug}`);
   return (
     <div className="grid gap-2 border-t border-border pt-4 text-sm">

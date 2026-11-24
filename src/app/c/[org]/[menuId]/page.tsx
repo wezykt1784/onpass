@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Menu specs" };
 
 export default async function CookbookMenu({ params }: PageProps<"/c/[org]/[menuId]">) {
   const { org, menuId } = await params;
-  const snap = await buildSnapshot(menuId);
+  const snap = await buildSnapshot(menuId, org);
   if (!snap) notFound();
   return (
     <>

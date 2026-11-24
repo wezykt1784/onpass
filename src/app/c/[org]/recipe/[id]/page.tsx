@@ -5,6 +5,7 @@ import { Link2 } from "lucide-react";
 import { getRecipe, getRollup, listAllergens, listDiets, listProducts, listRecipes, listSuppliers } from "@/lib/data";
 import { allergenNames, dateTimeUk, dietNames, qty } from "@/lib/format";
 import { AllergenBars, RagChip } from "@/components/ui";
+import { photoUrl } from "@/lib/supabase/env";
 import { BackLink } from "./back-link";
 
 export const metadata: Metadata = { title: "Spec" };
@@ -24,7 +25,7 @@ export default async function SpecView({ params }: PageProps<"/c/[org]/recipe/[i
       <BackLink fallback={`/c/${org}`} />
       {r.photoPath && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={`/api/files/${r.photoPath}`} alt={`${r.name}, as served`} className="mb-4 aspect-[4/3] w-full rounded-lg object-cover" />
+        <img src={photoUrl(r.photoPath)!} alt={`${r.name}, as served`} className="mb-4 aspect-[4/3] w-full rounded-lg object-cover" />
       )}
       <p className="text-sm text-text-muted">{r.kind === "batch" ? `Batch recipe · makes ${r.yieldQty} ${r.yieldUnit}` : "Dish"}</p>
       <h1 className="mb-2 text-xl break-words">{r.name}</h1>

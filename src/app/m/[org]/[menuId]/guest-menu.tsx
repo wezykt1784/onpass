@@ -5,6 +5,7 @@ import { SlidersHorizontal, X } from "lucide-react";
 import { allergenNames, dietNames, money, topLevelAllergens } from "@/lib/format";
 import type { Allergen, Diet, MenuSnapshot, Organisation, SnapshotDish } from "@/lib/types";
 import { AllergenBars, AllergenChip, Button, DietBadge } from "@/components/ui";
+import { photoUrl } from "@/lib/supabase/env";
 
 export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; snap: MenuSnapshot; allergens: Allergen[]; diets: Diet[] }) {
   const [avoid, setAvoid] = useState<string[]>([]);
@@ -147,7 +148,7 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
               <Dialog.Description className="mb-4 text-text-muted">{detail.description}</Dialog.Description>
               {detail.photoPath && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/api/files/${detail.photoPath}`} alt={detail.name} className="mb-4 aspect-[4/3] w-full rounded-md object-cover" />
+                <img src={photoUrl(detail.photoPath)!} alt={detail.name} className="mb-4 aspect-[4/3] w-full rounded-md object-cover" />
               )}
               {detail.unknown ? (
                 <p className="rounded-md border-[1.5px] border-dashed border-unknown bg-unknown-bg p-4 font-bold text-unknown">We&apos;re still checking the allergens in this dish. Please ask the team before ordering it.</p>
