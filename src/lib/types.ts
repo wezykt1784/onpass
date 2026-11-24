@@ -1,0 +1,163 @@
+// Shapes mirror replica/schema.sql so the Supabase layer can replace the fake one without screen changes.
+
+export type Unit = "g" | "kg" | "ml" | "l" | "ea";
+export type BaseUnit = "g" | "ml" | "ea";
+export type Rag = "green" | "amber" | "red";
+export type AllergenLevel = "contains" | "may_contain";
+
+export interface Organisation {
+  id: string;
+  name: string;
+  slug: string;
+  calorieStatement: string | null;
+  disclaimer: string;
+}
+
+export interface Allergen {
+  id: string;
+  code: string;
+  name: string;
+  parentId: string | null;
+  sort: number;
+}
+
+export interface Diet {
+  id: string;
+  code: string;
+  name: string;
+  short: string;
+  sort: number;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+}
+
+export interface Product {
+  id: string;
+  supplierId: string | null;
+  name: string;
+  supplierCode: string | null;
+  baseUnit: BaseUnit;
+  eachWeightG: number | null;
+  densityGPerMl: number | null;
+  packSize: number | null;
+  packCostPence: number | null;
+  allergenStatus: "complete" | "unknown";
+  allergens: { allergenId: string; level: AllergenLevel }[];
+  dietIds: string[];
+  nutritionPer100: Record<string, number>;
+  archived: boolean;
+  updatedAt: string;
+}
+
+export interface MethodStep {
+  text: string;
+  steps?: string[];
+}
+
+export interface RecipeLine {
+  id: string;
+  sort: number;
+  productId: string | null;
+  subRecipeId: string | null;
+  quantity: number;
+  unit: Unit;
+  note?: string | null;
+}
+
+export interface Recipe {
+  id: string;
+  kind: "dish" | "batch";
+  name: string;
+  code: string | null;
+  description: string | null;
+  photoPath: string | null;
+  yieldQty: number | null;
+  yieldUnit: BaseUnit | null;
+  portions: number;
+  method: MethodStep[];
+  skillRating: Rag | null;
+  timeRating: Rag | null;
+  status: "draft" | "approved" | "archived";
+  lines: RecipeLine[];
+  overrides: { allergenId: string; level: AllergenLevel; reason: string }[];
+  pricePence: number | null;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export interface Rollup {
+  contains: string[];
+  mayContain: string[];
+  unknownProducts: string[];
+  diets: string[];
+  nutritionPerPortion: Record<string, number>;
+  nutritionComplete: boolean;
+  costPerPortionPence: number | null;
+}
+
+export type MenuRowKind = "section" | "info" | "item";
+
+export interface MenuRow {
+  id: string;
+  kind: MenuRowKind;
+  title: string | null;
+  description: string | null;
+  recipeId: string | null;
+  pricePence: number | null;
+  children?: MenuRow[];
+}
+
+export interface Menu {
+  id: string;
+  name: string;
+  displayName: string | null;
+  code: string | null;
+  description: string | null;
+  subHeading1: string | null;
+  subHeading2: string | null;
+  menuDate: string | null;
+  rows: MenuRow[]; // sections at top level, items and info rows as children
+  updatedAt: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "org_admin" | "central_chef" | "head_chef" | "viewer";
+}
+
+// What guests and chefs read. Built from a menu; never the live tables.
+export interface SnapshotDish {
+  recipeId: string;
+  name: string;
+  description: string | null;
+  code: string | null;
+  pricePence: number | null;
+  photoPath: string | null;
+  contains: string[];
+  mayContain: string[];
+  unknown: boolean;
+  diets: string[];
+  kcal: number | null;
+}
+
+export interface SnapshotSection {
+  title: string;
+  description: string | null;
+  rows: ({ kind: "item"; dish: SnapshotDish } | { kind: "info"; text: string })[];
+}
+
+export interface MenuSnapshot {
+  menuId: string;
+  name: string;
+  description: string | null;
+  subHeading1: string | null;
+  subHeading2: string | null;
+  sections: SnapshotSection[];
+  hasUnknownAllergens: boolean;
+  builtAt: string;
+}
