@@ -3,7 +3,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ArrowDown, ArrowUp, BookOpen, Copy, Eye, GripVertical, Info, Plus, Trash2, Utensils } from "lucide-react";
-import { copyMenuAction, saveMenuDetailsAction, saveMenuRowsAction } from "@/lib/actions";
+import { copyMenuAction, saveMenuDetailsAction, saveMenuRowsAction, setMenuBrandsAction } from "@/lib/actions";
 import { allergenNames, money } from "@/lib/format";
 import type { Allergen, Menu, MenuRow } from "@/lib/types";
 import { Combobox } from "@/components/combobox";
@@ -13,7 +13,9 @@ interface DishOpt { id: string; name: string; code: string | null; pricePence: n
 
 const newId = () => `new-${crypto.randomUUID().slice(0, 8)}`;
 
-export function MenuEditor({ menu, dishes, allergens, orgSlug }: { menu: Menu; dishes: DishOpt[]; allergens: Allergen[]; orgSlug: string }) {
+export function MenuEditor({ menu, dishes, allergens, orgSlug, brands, canChooseBrands }: {
+  menu: Menu; dishes: DishOpt[]; allergens: Allergen[]; orgSlug: string; brands: { id: string; name: string }[]; canChooseBrands: boolean;
+}) {
   const [tab, setTab] = useState("content");
   return (
     <div className="grid gap-5">
@@ -37,7 +39,7 @@ export function MenuEditor({ menu, dishes, allergens, orgSlug }: { menu: Menu; d
           ))}
         </Tabs.List>
         <Tabs.Content value="content"><ContentBuilder menu={menu} dishes={dishes} allergens={allergens} /></Tabs.Content>
-        <Tabs.Content value="details"><Details menu={menu} /></Tabs.Content>
+        <Tabs.Content value="details"><div className="grid gap-6"><Details menu={menu} /><MenuBrands menu={menu} brands={brands} canEdit={canChooseBrands} /></div></Tabs.Content>
       </Tabs.Root>
     </div>
   );
@@ -79,6 +81,40 @@ function Details({ menu }: { menu: Menu }) {
           <Button type="submit" loading={pending}>Save details</Button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+function MenuBrands({ menu, brands, canEdit }: { menu: Menu; brands: { id: string; name: string }[]; canEdit: boolean }) {
+  const [chosen, setChosen] = useState<string[]>(menu.brandIds);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <Card className="p-5">
+      <fieldset disabled={!canEdit}>
+        <legend className="mb-1 text-lg font-semibold">Brands that can use this menu</legend>
+        <p className="mb-3 text-sm text-text-muted">Only ticked brands can publish it to their sites.{!canEdit && " Central chefs choose these."}</p>
+        {brands.length === 0 ? <p className="text-text-muted">No brands yet. An admin adds them under Admin, Brands and sites.</p> : (
+          <div className="mb-4 flex flex-wrap gap-3">
+            {brands.map((b) => (
+              <label key={b.id} className="flex min-h-11 items-center gap-2 rounded-md border border-border-input px-3 text-sm font-semibold has-[:checked]:border-accent">
+                <input type="checkbox" className="size-5 accent-[var(--color-accent)]" checked={chosen.includes(b.id)}
+                  onChange={(e) => { setChosen(e.target.checked ? [...chosen, b.id] : chosen.filter((x) => x !== b.id)); setMsg(null); }} />
+                {b.name}
+              </label>
+            ))}
+          </div>
+        )}
+      </fieldset>
+      {canEdit && brands.length > 0 && (
+        <div className="flex items-center justify-end gap-3">
+          {msg && <span role={msg.ok ? "status" : "alert"} className={`text-sm ${msg.ok ? "text-text-muted" : "text-danger"}`}>{msg.text}</span>}
+          <Button loading={pending} onClick={() => start(async () => {
+            const r = await setMenuBrandsAction(menu.id, chosen);
+            setMsg(r.ok ? { ok: true, text: "Saved" } : { ok: false, text: r.error });
+          })}>Save brands</Button>
+        </div>
+      )}
     </Card>
   );
 }

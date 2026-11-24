@@ -22,7 +22,7 @@ export default async function ProductPage({ params }: PageProps<"/app/products/[
         <ChevronLeft aria-hidden className="size-4" />Products
       </Link>
       <PageHeader title={product?.name ?? "New product"} />
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
         <Card className="p-5"><ProductForm key={product?.id ?? "new"} product={product ?? undefined} suppliers={suppliers} allergens={allergens} diets={diets} /></Card>
         {usedIn.length > 0 && (
           <Card className="content-start p-5 h-fit">

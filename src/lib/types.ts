@@ -120,6 +120,7 @@ export interface Menu {
   subHeading2: string | null;
   menuDate: string | null;
   rows: MenuRow[]; // sections at top level, items and info rows as children
+  brandIds: string[]; // brands allowed to publish this menu
   updatedAt: string;
 }
 
@@ -128,6 +129,8 @@ export interface User {
   name: string;
   email: string;
   role: "org_admin" | "central_chef" | "head_chef" | "viewer";
+  brandId?: string | null; // null or missing = whole group
+  status?: "active" | "disabled";
 }
 
 // What guests and chefs read. Built from a menu; never the live tables.
@@ -160,4 +163,66 @@ export interface MenuSnapshot {
   sections: SnapshotSection[];
   hasUnknownAllergens: boolean;
   builtAt: string;
+}
+
+// ---------- milestone 2: brands, sites, publishing, members ----------
+
+export interface GuestSettings {
+  disclaimer: string;
+  showKcal: boolean;
+  headerNote: string | null; // e.g. "Food served 12 to 9"
+}
+
+export interface Brand {
+  id: string;
+  name: string;
+  slug: string;
+  logoPath: string | null;
+  enabled: boolean;
+  guest: GuestSettings;
+  updatedAt: string;
+}
+
+export interface Site {
+  id: string;
+  brandId: string;
+  name: string;
+  slug: string;
+  address: string | null;
+  enabled: boolean;
+}
+
+export type Stage = "staging" | "live";
+
+export interface Publication {
+  id: string;
+  brandId: string;
+  menuId: string;
+  stage: Stage;
+  sort: number;
+  liveFrom: string | null; // a staging row with liveFrom in the past counts as live
+  autoRefresh: boolean;
+  snapshot: MenuSnapshot;
+  publishedBy: string | null;
+  updatedAt: string;
+}
+
+export interface Member {
+  userId: string;
+  name: string;
+  email: string;
+  role: User["role"];
+  brandId: string | null;
+  status: "active" | "disabled";
+  invitedAt: string;
+}
+
+/** What a guest sees at a site's address: the brand's live menus, freshest safe version of each. */
+export interface SiteMenus {
+  org: Organisation;
+  brand: Brand;
+  site: Site;
+  menus: MenuSnapshot[];
+  allergens: Allergen[];
+  diets: Diet[];
 }

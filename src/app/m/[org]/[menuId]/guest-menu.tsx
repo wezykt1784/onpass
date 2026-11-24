@@ -7,7 +7,11 @@ import type { Allergen, Diet, MenuSnapshot, Organisation, SnapshotDish } from "@
 import { AllergenBars, AllergenChip, Button, DietBadge } from "@/components/ui";
 import { photoUrl } from "@/lib/supabase/env";
 
-export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; snap: MenuSnapshot; allergens: Allergen[]; diets: Diet[] }) {
+export function GuestMenu({ org, menus, allergens, diets, venue, note, logo, showKcal = true }: {
+  org: Organisation; menus: MenuSnapshot[]; allergens: Allergen[]; diets: Diet[]; venue?: string; note?: string | null; logo?: { src: string; alt: string } | null; showKcal?: boolean;
+}) {
+  const [active, setActive] = useState(0);
+  const snap = menus[Math.min(active, menus.length - 1)];
   const [avoid, setAvoid] = useState<string[]>([]);
   const [want, setWant] = useState<string[]>([]);
   const [strict, setStrict] = useState(false);
@@ -39,10 +43,23 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
     <div className="min-h-screen bg-surface">
       <div className="mx-auto max-w-xl bg-bg pb-10 shadow-card">
         <header className="bg-ink px-5 py-5 text-on-ink">
-          <p className="text-sm opacity-90">{org.name}</p>
+          {/* eslint-disable-next-line @next/next/no-img-element -- uploaded logo from our own storage, any size */}
+          {logo && <img src={logo.src} alt={logo.alt} className="mb-3 max-h-14 max-w-48 rounded bg-white object-contain p-1.5" />}
+          <p className="text-sm opacity-90">{venue ?? org.name}</p>
           <h1 className="text-xl">{snap.name}</h1>
-          {snap.description && <p className="mt-1 text-sm opacity-90">{snap.description}</p>}
+          {(note || snap.description) && <p className="mt-1 text-sm opacity-90">{note ?? snap.description}</p>}
         </header>
+
+        {menus.length > 1 && (
+          <div role="tablist" aria-label="Menus" className="flex gap-2 overflow-x-auto border-b border-border px-4 py-3">
+            {menus.map((m, i) => (
+              <button key={m.menuId} role="tab" aria-selected={i === active} onClick={() => setActive(i)}
+                className={`inline-flex h-10 shrink-0 items-center rounded-pill border px-4 text-sm font-semibold ${i === active ? "border-text bg-text text-bg" : "border-border-input"}`}>
+                {m.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="sticky top-0 z-10 border-b border-border bg-bg px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -77,7 +94,7 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
                     <li key={r.dish.recipeId} className="border-t border-border">
                       <button className="block w-full px-4 py-4 text-left hover:bg-surface-sunken" aria-haspopup="dialog" onClick={() => { remember(); setDetail(r.dish); }}>
                         <span className="flex justify-between gap-3 font-bold"><span>{r.dish.name}</span><span className="tabular">{money(r.dish.pricePence)}</span></span>
-                        {r.dish.description && <span className="mt-1 block text-sm text-text-muted">{r.dish.description}{r.dish.kcal != null ? ` · ${r.dish.kcal} kcal` : ""}</span>}
+                        {(r.dish.description || (showKcal && r.dish.kcal != null)) && <span className="mt-1 block text-sm text-text-muted">{r.dish.description}{showKcal && r.dish.kcal != null ? ` · ${r.dish.kcal} kcal` : ""}</span>}
                         <span className="mt-2 flex flex-wrap gap-1.5">
                           {r.dish.diets.map((d) => { const x = diets.find((y) => y.id === d); return x ? <DietBadge key={d} short={x.short} name={x.name} /> : null; })}
                           {r.dish.unknown ? <AllergenChip size="sm" level="unknown" name="Ask us about allergens" /> :
@@ -161,7 +178,7 @@ export function GuestMenu({ org, snap, allergens, diets }: { org: Organisation; 
               )}
               <dl className="mt-4 grid grid-cols-2 gap-y-1 text-sm">
                 <dt className="text-text-muted">Price</dt><dd className="text-right tabular">{money(detail.pricePence)}</dd>
-                {detail.kcal != null && <><dt className="text-text-muted">Energy</dt><dd className="text-right tabular">{detail.kcal} kcal</dd></>}
+                {showKcal && detail.kcal != null && <><dt className="text-text-muted">Energy</dt><dd className="text-right tabular">{detail.kcal} kcal</dd></>}
               </dl>
               <p className="mt-4 text-xs text-text-muted">{org.disclaimer}</p>
             </Dialog.Content>

@@ -33,7 +33,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/app/pro
       {products.length === 0 ? (
         <EmptyState icon={q ? <Search /> : <Carrot />} text={q ? `No products match "${q}".` : missingOnly ? "Every product has its allergens confirmed." : "No products yet. Add what you buy, then use it in recipes."} />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-bg">
+        <div className="relative overflow-x-auto rounded-lg border border-border bg-bg">
           <table className="w-full min-w-[720px] text-sm">
             <thead><tr className="border-b border-border bg-surface text-left text-text-muted">
               <th scope="col" className="px-4 py-2.5 font-semibold">Product</th><th scope="col" className="px-4 py-2.5 font-semibold">Supplier</th>

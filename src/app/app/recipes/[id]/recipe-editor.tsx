@@ -42,15 +42,16 @@ export function RecipeEditor({
   const [quickAdd, setQuickAdd] = useState<{ lineKey: string; name: string } | null>(null);
   const [version, setVersion] = useState(recipe.updatedAt);
   const saving = useRef(false); // set at once on click, before React re-renders the button as busy
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const focusId = useRef<string | null>(null); // element to focus after the next render
+  const setFocusId = (id: string) => { focusId.current = id; };
   const [pending, start] = useTransition();
   const touch = () => { setDirty(true); setSaved(false); };
 
   useEffect(() => {
-    if (!focusId) return;
-    document.getElementById(focusId)?.focus();
-    setFocusId(null);
-  }, [focusId]);
+    if (!focusId.current) return;
+    document.getElementById(focusId.current)?.focus();
+    focusId.current = null;
+  });
 
   useEffect(() => {
     if (!dirty) return;
@@ -157,7 +158,7 @@ export function RecipeEditor({
       </div>
       {error && <Notice tone="danger">{error}</Notice>}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
         <div className="grid min-w-0 gap-6">
           <Card className="grid gap-4 p-5 sm:grid-cols-2">
             <Field label="Name" htmlFor="r-name" className="sm:col-span-2">

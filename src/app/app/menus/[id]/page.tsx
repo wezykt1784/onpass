@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
-import { getMenu, getOrg, listAllergens, listRecipes } from "@/lib/data";
+import { currentUser, getMenu, getOrg, listAllergens, listBrands, listRecipes } from "@/lib/data";
 import { MenuEditor } from "./menu-editor";
 
 export const metadata: Metadata = { title: "Menu" };
@@ -11,7 +11,7 @@ export default async function MenuPage({ params }: PageProps<"/app/menus/[id]">)
   const { id } = await params;
   const menu = await getMenu(id);
   if (!menu) notFound();
-  const [dishes, allergens, org] = await Promise.all([listRecipes({ kind: "dish" }), listAllergens(), getOrg()]);
+  const [dishes, allergens, org, brands, user] = await Promise.all([listRecipes({ kind: "dish" }), listAllergens(), getOrg(), listBrands(), currentUser()]);
   return (
     <>
       <Link href="/app/menus" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-text-muted hover:text-text">
@@ -22,7 +22,9 @@ export default async function MenuPage({ params }: PageProps<"/app/menus/[id]">)
           id: recipe.id, name: recipe.name, code: recipe.code, pricePence: recipe.pricePence,
           unknown: rollup.unknownProducts.length > 0, contains: rollup.contains,
         }))}
-        allergens={allergens} />
+        allergens={allergens}
+        brands={brands.map((b) => ({ id: b.id, name: b.name }))}
+        canChooseBrands={user?.role === "org_admin" || user?.role === "central_chef"} />
     </>
   );
 }

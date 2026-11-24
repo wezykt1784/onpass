@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChefHat, Search } from "lucide-react";
 import { listAllergens, listRecipes } from "@/lib/data";
-import { allergenNames, money } from "@/lib/format";
+import { allergenNames, money, topLevelAllergens } from "@/lib/format";
 import { AllergenChip, EmptyState, PageHeader, Pill, RagChip, buttonClass, inputClass } from "@/components/ui";
 import { NewRecipeButton } from "./new-recipe";
 
@@ -12,10 +12,15 @@ export default async function RecipesPage({ searchParams }: PageProps<"/app/reci
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
   const kind = sp.kind === "dish" || sp.kind === "batch" ? sp.kind : undefined;
-  const [rows, allergens] = await Promise.all([listRecipes({ q, kind }), listAllergens()]);
+  const status = sp.status === "draft" || sp.status === "approved" || sp.status === "archived" ? sp.status : undefined;
+  const allergen = typeof sp.allergen === "string" ? sp.allergen : "";
+  const [all, allergens] = await Promise.all([listRecipes({ q, kind, status }), listAllergens()]);
+  const rows = allergen === "missing" ? all.filter((r) => r.rollup.unknownProducts.length > 0)
+    : allergen ? all.filter((r) => topLevelAllergens([...r.rollup.contains, ...r.rollup.mayContain], allergens).has(allergen)) : all;
+  const filtered = Boolean(status || allergen);
   const tab = (k?: string) =>
     `h-9 rounded-pill px-4 text-sm font-semibold inline-flex items-center ${kind === k ? "bg-text text-bg" : "border border-border-input bg-bg text-text"}`;
-  const qs = (k?: string) => `/app/recipes?${new URLSearchParams({ ...(q && { q }), ...(k && { kind: k }) })}`;
+  const qs = (k?: string) => `/app/recipes?${new URLSearchParams({ ...(q && { q }), ...(k && { kind: k }), ...(status && { status }), ...(allergen && { allergen }) })}`;
 
   return (
     <>
@@ -34,16 +39,39 @@ export default async function RecipesPage({ searchParams }: PageProps<"/app/reci
         </div>
         <p className="ml-auto text-sm text-text-muted" aria-live="polite">{rows.length} {rows.length === 1 ? "recipe" : "recipes"}</p>
       </div>
+      <form action="/app/recipes" className="mb-4 flex flex-wrap items-end gap-3" aria-label="Filter recipes">
+        {q && <input type="hidden" name="q" value={q} />}
+        {kind && <input type="hidden" name="kind" value={kind} />}
+        <label className="grid gap-1 text-sm font-semibold" htmlFor="f-allergen">
+          Contains
+          <select id="f-allergen" name="allergen" defaultValue={allergen} className={`${inputClass} w-64`}>
+            <option value="">Any allergen or none</option>
+            <option value="missing">Allergen data missing</option>
+            {allergens.filter((a) => !a.parentId).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-semibold" htmlFor="f-status">
+          Status
+          <select id="f-status" name="status" defaultValue={status ?? ""} className={`${inputClass} w-44`}>
+            <option value="">Draft and approved</option>
+            <option value="draft">Drafts only</option>
+            <option value="approved">Approved only</option>
+            <option value="archived">Archived</option>
+          </select>
+        </label>
+        <button className={buttonClass("secondary")}>Apply</button>
+        {filtered && <Link className={buttonClass("ghost")} href={`/app/recipes?${new URLSearchParams({ ...(q && { q }), ...(kind && { kind }) })}`}>Clear filters</Link>}
+      </form>
 
       {rows.length === 0 ? (
-        q ? (
-          <EmptyState icon={<Search />} text={`No recipes match "${q}". Check the spelling or clear the search.`}
-            action={<Link className={buttonClass("secondary")} href={qs(kind)}>Clear search</Link>} />
+        q || filtered ? (
+          <EmptyState icon={<Search />} text={q ? `No recipes match "${q}". Check the spelling or clear the search.` : "No recipes match these filters."}
+            action={<Link className={buttonClass("secondary")} href={kind ? `/app/recipes?kind=${kind}` : "/app/recipes"}>Clear search and filters</Link>} />
         ) : (
           <EmptyState icon={<ChefHat />} text="No recipes yet. Start with a batch recipe, then build the dish on top of it." action={<NewRecipeButton />} />
         )
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-bg">
+        <div className="relative overflow-x-auto rounded-lg border border-border bg-bg">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-border bg-surface text-left text-text-muted">

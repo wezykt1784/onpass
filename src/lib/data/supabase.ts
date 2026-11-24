@@ -7,9 +7,11 @@ import { z } from "zod";
 import { supabaseServer } from "../supabase/server";
 import { PHOTO_BUCKET } from "../supabase/env";
 import type {
-  Allergen, Diet, Menu, MenuRow, MenuSnapshot, Organisation, Product, Recipe, RecipeLine, Rollup, SnapshotDish,
-  SnapshotSection, Supplier, User,
+  Allergen, Brand, Diet, GuestSettings, Member, Menu, MenuRow, MenuSnapshot, Organisation, Product, Publication, Recipe, RecipeLine,
+  Rollup, Site, SiteMenus, SnapshotDish, SnapshotSection, Supplier, User,
 } from "../types";
+import { effectiveLive, guestVersion, missingInfo, slugify } from "../publishing";
+import { supabaseAdmin } from "../supabase/admin";
 
 export class DataError extends Error {}
 
@@ -59,12 +61,13 @@ export async function currentUser(): Promise<User | null> {
   await sb.rpc("ensure_profile");
   const { data: org } = await sb.rpc("current_org");
   if (!org) return null;
-  const [{ data: role }, { data: prof }] = await Promise.all([
+  const [{ data: role }, { data: prof }, { data: mem }] = await Promise.all([
     sb.rpc("org_role", { p_org: org }),
     sb.from("profiles").select("first_name,last_name,email").eq("id", user.id).maybeSingle(),
+    sb.from("memberships").select("brand_id").eq("user_id", user.id).eq("org_id", org).eq("status", "active").not("brand_id", "is", null).limit(1),
   ]);
   const name = [prof?.first_name, prof?.last_name].filter(Boolean).join(" ") || user.email || "Chef";
-  return { id: user.id, name, email: user.email ?? "", role: (role as User["role"]) ?? "viewer" };
+  return { id: user.id, name, email: user.email ?? "", role: (role as User["role"]) ?? "viewer", brandId: (mem?.[0]?.brand_id as string) ?? null, status: "active" };
 }
 
 /** Signed in to Supabase but with no membership in any kitchen group. */
@@ -478,13 +481,14 @@ const mapMenu = (m: Row): Menu => ({
   id: m.id as string, name: m.name as string, displayName: (m.display_name as string) ?? null, code: (m.code as string) ?? null,
   description: (m.description as string) ?? null, subHeading1: (m.sub_heading_1 as string) ?? null,
   subHeading2: (m.sub_heading_2 as string) ?? null, menuDate: (m.menu_date as string) ?? null,
-  rows: nestRows((m.menu_rows as Row[]) ?? []), updatedAt: m.updated_at as string,
+  rows: nestRows((m.menu_rows as Row[]) ?? []), brandIds: ((m.menu_brands as Row[]) ?? []).map((b) => b.brand_id as string),
+  updatedAt: m.updated_at as string,
 });
 
 export async function listMenus(q?: string) {
   await connection();
   const { sb } = await session();
-  let query = sb.from("menus").select("*, menu_rows(id,kind,recipe_id,parent_row_id,sort,title,description)").order("updated_at", { ascending: false });
+  let query = sb.from("menus").select("*, menu_brands(brand_id), menu_rows(id,kind,recipe_id,parent_row_id,sort,title,description)").order("updated_at", { ascending: false });
   const t = (q ?? "").trim().replace(/[%,()]/g, "");
   if (t) query = query.or(`name.ilike.%${t}%,code.ilike.%${t}%`);
   const { data, error } = await query;
@@ -496,7 +500,7 @@ export async function getMenu(menuId: string): Promise<Menu | null> {
   await connection();
   if (!z.uuid().safeParse(menuId).success) return null;
   const { sb } = await session();
-  const { data } = await sb.from("menus").select("*, menu_rows(*)").eq("id", menuId).maybeSingle();
+  const { data } = await sb.from("menus").select("*, menu_brands(brand_id), menu_rows(*)").eq("id", menuId).maybeSingle();
   return data ? mapMenu(data) : null;
 }
 
@@ -559,6 +563,7 @@ export async function copyMenu(menuId: string, name: string) {
   const copy = await createMenu({ name: name.trim() || `${m.name} (copy)` });
   await updateMenuDetails(copy.id, { ...m, name: copy.name, code: null });
   await saveMenuRows(copy.id, m.rows);
+  if (m.brandIds.length) await setMenuBrands(copy.id, m.brandIds); // the copy is offered to the same brands
   return (await getMenu(copy.id))!;
 }
 
@@ -683,4 +688,387 @@ export async function exchangeAuthCode(code: string) {
 export async function signOutEverywhere() {
   const { sb } = await session();
   await sb.auth.signOut({ scope: "global" });
+}
+
+
+// ---------- milestone 2: brands, sites, publishing, members ----------
+
+const defaultGuest: GuestSettings = { disclaimer: "", showKcal: false, headerNote: null };
+const mapGuest = (g: Row | null | undefined): GuestSettings => ({
+  disclaimer: (g?.disclaimer as string) ?? "", showKcal: Boolean(g?.showKcal), headerNote: (g?.headerNote as string) ?? null,
+});
+
+const mapBrand = (b: Row): Brand => {
+  const out = ((b.outputs as Row[]) ?? []).find((o) => o.kind === "guest_web");
+  return {
+    id: b.id as string, name: b.name as string, slug: b.slug as string, logoPath: (b.logo_path ?? b.logoPath ?? null) as string | null,
+    enabled: Boolean(b.enabled), guest: out ? mapGuest(out.settings as Row) : defaultGuest, updatedAt: (b.updated_at ?? b.updatedAt) as string,
+  };
+};
+const mapSite = (x: Row): Site => ({
+  id: x.id as string, brandId: (x.brand_id ?? x.brandId) as string, name: x.name as string, slug: x.slug as string,
+  address: (x.address as string) ?? null, enabled: Boolean(x.enabled),
+});
+
+async function requireAdmin(): Promise<User> {
+  const u = await requireEditor();
+  if (u.role !== "org_admin") throw new DataError("Only an admin can change brands, sites and people.");
+  return u;
+}
+async function requireBrandManager(brandId: string): Promise<User> {
+  const u = await requireEditor();
+  if (u.role === "org_admin" || u.role === "central_chef") return u;
+  if (u.role === "head_chef" && u.brandId === brandId) return u;
+  throw new DataError("You can only publish for your own brand.");
+}
+
+export async function listBrands(): Promise<Brand[]> {
+  await connection();
+  const { sb } = await session();
+  const { data, error } = await sb.from("brands").select("*, outputs(kind,settings)").order("name");
+  if (error) fail(error);
+  return (data ?? []).map(mapBrand);
+}
+
+export async function getBrand(brandId: string): Promise<Brand | null> {
+  await connection();
+  if (!z.uuid().safeParse(brandId).success) return null;
+  const { sb } = await session();
+  const { data } = await sb.from("brands").select("*, outputs(kind,settings)").eq("id", brandId).maybeSingle();
+  return data ? mapBrand(data) : null;
+}
+
+const guestInput = z.object({ disclaimer: z.string().max(600, "Keep the allergen note under 600 characters."), showKcal: z.boolean(), headerNote: z.string().max(120).nullable() });
+
+export async function upsertBrand(input: Omit<Brand, "id" | "updatedAt" | "logoPath"> & { id?: string }): Promise<Brand> {
+  await requireAdmin();
+  const name = input.name.trim();
+  if (!name) throw new DataError("Give the brand a name.");
+  const slug = slugify(input.slug || name);
+  if (slug.length < 2) throw new DataError("The web name needs at least 2 letters or numbers.");
+  const g = guestInput.safeParse(input.guest);
+  if (!g.success) throw new DataError(g.error.issues[0].message);
+  const { sb } = await session();
+  let id = input.id;
+  if (id) {
+    const { error } = await sb.from("brands").update({ name, slug, enabled: input.enabled }).eq("id", id);
+    if (error?.code === "23505") throw new DataError(`Another brand already uses the web name "${slug}".`);
+    if (error) fail(error);
+    const { error: e2 } = await sb.from("outputs").update({ settings: g.data }).eq("brand_id", id).eq("kind", "guest_web");
+    if (e2) fail(e2);
+  } else {
+    const org = await orgId();
+    const { data, error } = await sb.from("brands").insert({ org_id: org, name, slug, enabled: input.enabled }).select("id").single();
+    if (error) {
+      if (error.code === "23505") throw new DataError(`Another brand already uses the web name "${slug}".`);
+      fail(error);
+    }
+    id = data.id as string;
+    const { error: e2 } = await sb.from("outputs").insert({ org_id: org, brand_id: id, kind: "guest_web", name: "Guest menu", path_code: "guest", settings: g.data });
+    if (e2) fail(e2);
+  }
+  return (await getBrand(id!))!;
+}
+
+export async function setBrandLogo(brandId: string, file: File | null) {
+  await requireAdmin();
+  const { sb } = await session();
+  let path: string | null = null;
+  if (file) {
+    path = `${await orgId()}/brand-${brandId}-${Date.now()}.${file.type === "image/png" ? "png" : "jpg"}`;
+    const up = await sb.storage.from(PHOTO_BUCKET).upload(path, file, { contentType: file.type });
+    if (up.error) throw new DataError("The logo didn't upload. Use a PNG or JPG under 4 MB.");
+  }
+  const { error } = await sb.from("brands").update({ logo_path: path }).eq("id", brandId);
+  if (error) fail(error);
+}
+
+export async function listSites(brandId?: string): Promise<Site[]> {
+  await connection();
+  const { sb } = await session();
+  let q = sb.from("sites").select("*").order("name");
+  if (brandId) q = q.eq("brand_id", brandId);
+  const { data, error } = await q;
+  if (error) fail(error);
+  return (data ?? []).map(mapSite);
+}
+
+export async function upsertSite(input: Omit<Site, "id"> & { id?: string }): Promise<Site> {
+  await requireAdmin();
+  const name = input.name.trim();
+  if (!name) throw new DataError("Give the site a name.");
+  const slug = slugify(input.slug || name);
+  if (slug.length < 2) throw new DataError("The web name needs at least 2 letters or numbers.");
+  const { sb } = await session();
+  const row = { brand_id: input.brandId, name, slug, address: input.address?.trim() || null, enabled: input.enabled };
+  const res = input.id
+    ? await sb.from("sites").update(row).eq("id", input.id).select("*").single()
+    : await sb.from("sites").insert({ ...row, org_id: await orgId() }).select("*").single();
+  if (res.error) {
+    if (res.error.code === "23505") throw new DataError(`Another site already uses the web name "${slug}".`);
+    fail(res.error);
+  }
+  return mapSite(res.data);
+}
+
+export async function setMenuBrands(menuId: string, brandIds: string[]) {
+  const u = await requireEditor();
+  if (u.role !== "org_admin" && u.role !== "central_chef") throw new DataError("Only central chefs choose which brands can use a menu.");
+  const { sb } = await session();
+  const menu = await getMenu(menuId);
+  if (!menu) throw new DataError("That menu no longer exists.");
+  const removed = menu.brandIds.filter((b) => !brandIds.includes(b));
+  if (removed.length) {
+    const { data } = await sb.from("publications").select("id, outputs!inner(brand_id, brands(name))").eq("menu_id", menuId).in("outputs.brand_id", removed);
+    if (data?.length) {
+      const names = [...new Set(data.map((r) => (((r as Row).outputs as Row)?.brands as Row)?.name))].join(", ");
+      throw new DataError(`Take this menu off ${names} in Publish first.`);
+    }
+    const { error } = await sb.from("menu_brands").delete().eq("menu_id", menuId).in("brand_id", removed);
+    if (error) fail(error);
+  }
+  const added = brandIds.filter((b) => !menu.brandIds.includes(b));
+  if (added.length) {
+    const { error } = await sb.from("menu_brands").insert(added.map((b) => ({ menu_id: menuId, brand_id: b })));
+    if (error) fail(error);
+  }
+}
+
+async function guestOutputId(brandId: string): Promise<string> {
+  const { sb } = await session();
+  const { data } = await sb.from("outputs").select("id").eq("brand_id", brandId).eq("kind", "guest_web").limit(1).maybeSingle();
+  if (!data) throw new DataError("This brand has no guest menu set up. Save the brand's settings once to create it.");
+  return data.id as string;
+}
+
+const PUB_SELECT = "*, outputs!inner(brand_id), menu_snapshots(body)";
+const mapPub = (p: Row): Publication => ({
+  id: p.id as string, brandId: (p.outputs as Row).brand_id as string, menuId: p.menu_id as string, stage: p.stage as Publication["stage"],
+  sort: p.sort as number, liveFrom: (p.live_from as string) ?? null, autoRefresh: Boolean(p.auto_refresh),
+  snapshot: ((p.menu_snapshots as Row)?.body ?? {}) as unknown as MenuSnapshot, publishedBy: (p.created_by as string) ?? null,
+  updatedAt: p.updated_at as string,
+});
+
+export async function listPublications(brandId: string): Promise<Publication[]> {
+  await connection();
+  const { sb } = await session();
+  const { data, error } = await sb.from("publications").select(PUB_SELECT).eq("outputs.brand_id", brandId).order("sort");
+  if (error) fail(error);
+  return (data ?? []).map(mapPub);
+}
+
+async function saveSnapshot(menuId: string): Promise<{ id: string; snap: MenuSnapshot }> {
+  const snap = await buildSnapshot(menuId);
+  if (!snap) throw new DataError("That menu no longer exists.");
+  const { sb } = await session();
+  const { data, error } = await sb.from("menu_snapshots").insert({
+    org_id: await orgId(), menu_id: menuId, body: snap, has_unknown_allergens: snap.hasUnknownAllergens,
+  }).select("id").single();
+  if (error) fail(error);
+  return { id: data.id as string, snap };
+}
+
+export async function stageMenu(brandId: string, menuId: string): Promise<Publication> {
+  const u = await requireBrandManager(brandId);
+  const menu = await getMenu(menuId);
+  if (!menu) throw new DataError("That menu no longer exists.");
+  if (!menu.brandIds.includes(brandId)) throw new DataError("This menu isn't set up for this brand. Tick the brand on the menu's Details tab first.");
+  const output = await guestOutputId(brandId);
+  const { id: snapshotId } = await saveSnapshot(menuId);
+  const { sb } = await session();
+  // A staging row whose go-live time has passed is the live menu now: make it the live row before staging a new copy.
+  const { data: due } = await sb.from("publications").select("id").eq("output_id", output).eq("menu_id", menuId).eq("stage", "staging")
+    .not("live_from", "is", null).lte("live_from", new Date().toISOString()).maybeSingle();
+  if (due) {
+    const del = await sb.from("publications").delete().eq("output_id", output).eq("menu_id", menuId).eq("stage", "live");
+    if (del.error) fail(del.error);
+    const up = await sb.from("publications").update({ stage: "live" }).eq("id", due.id);
+    if (up.error) fail(up.error);
+  }
+  const { data: existing } = await sb.from("publications").select("id").eq("output_id", output).eq("menu_id", menuId).eq("stage", "staging").maybeSingle();
+  if (existing) {
+    const { error } = await sb.from("publications").update({ snapshot_id: snapshotId, live_from: null, created_by: u.id }).eq("id", existing.id);
+    if (error) fail(error);
+  } else {
+    const { data: last } = await sb.from("publications").select("sort").eq("output_id", output).order("sort", { ascending: false }).limit(1);
+    const { error } = await sb.from("publications").insert({
+      org_id: await orgId(), output_id: output, menu_id: menuId, stage: "staging", sort: ((last?.[0]?.sort as number) ?? 0) + 1, snapshot_id: snapshotId, created_by: u.id,
+    });
+    if (error) fail(error);
+  }
+  return (await listPublications(brandId)).find((p) => p.menuId === menuId && p.stage === "staging")!;
+}
+
+async function getPub(pubId: string): Promise<Publication> {
+  const { sb } = await session();
+  const { data } = await sb.from("publications").select(PUB_SELECT).eq("id", pubId).maybeSingle();
+  if (!data) throw new DataError("That menu is no longer published.");
+  return mapPub(data);
+}
+
+export async function pushLive(pubId: string, liveFrom: string | null): Promise<void> {
+  const p = await getPub(pubId);
+  const u = await requireBrandManager(p.brandId);
+  if (p.stage !== "staging") throw new DataError("Only a staging menu can go live.");
+  const brand = (await getBrand(p.brandId))!;
+  const { id: snapshotId, snap } = await saveSnapshot(p.menuId);
+  const issues = missingInfo(snap, brand.guest);
+  if (issues.blocking.length) throw new DataError(`Can't go live yet: ${issues.blocking.join(" ")}`);
+  const { sb } = await session();
+  if (liveFrom) {
+    const t = new Date(liveFrom);
+    if (Number.isNaN(t.getTime())) throw new DataError("Pick a valid date and time.");
+    if (t.getTime() < Date.now() - 60_000) throw new DataError("Pick a time in the future, or use Go live now.");
+    const { error } = await sb.from("publications").update({ snapshot_id: snapshotId, live_from: t.toISOString(), created_by: u.id }).eq("id", pubId);
+    if (error) fail(error);
+    return;
+  }
+  const output = await guestOutputId(p.brandId);
+  const del = await sb.from("publications").delete().eq("output_id", output).eq("menu_id", p.menuId).eq("stage", "live");
+  if (del.error) fail(del.error);
+  const { error } = await sb.from("publications").update({ stage: "live", snapshot_id: snapshotId, live_from: null, created_by: u.id }).eq("id", pubId);
+  if (error) fail(error);
+}
+
+export async function unpublish(pubId: string) {
+  const p = await getPub(pubId);
+  await requireBrandManager(p.brandId);
+  const { sb } = await session();
+  const { error } = await sb.from("publications").delete().eq("id", pubId);
+  if (error) fail(error);
+}
+
+export async function movePublication(pubId: string, dir: -1 | 1) {
+  const p = await getPub(pubId);
+  await requireBrandManager(p.brandId);
+  const list = (await listPublications(p.brandId)).filter((x) => x.stage === p.stage);
+  const i = list.findIndex((x) => x.id === pubId);
+  const j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  const { sb } = await session();
+  const a = await sb.from("publications").update({ sort: list[j].sort }).eq("id", list[i].id);
+  const b = await sb.from("publications").update({ sort: list[i].sort }).eq("id", list[j].id);
+  if (a.error || b.error) fail(a.error ?? b.error);
+}
+
+export async function setAutoRefresh(pubId: string, on: boolean) {
+  const p = await getPub(pubId);
+  const u = await requireBrandManager(p.brandId);
+  if (u.role === "head_chef") throw new DataError("Only central chefs change how live menus update.");
+  const { sb } = await session();
+  const patch: Row = { auto_refresh: on };
+  if (!on) {
+    const fresh = await buildSnapshot(p.menuId);
+    if (fresh && !fresh.hasUnknownAllergens) patch.snapshot_id = (await saveSnapshot(p.menuId)).id; // freeze at what guests see now
+  }
+  const { error } = await sb.from("publications").update(patch).eq("id", pubId);
+  if (error) fail(error);
+}
+
+export async function approveRefresh(pubId: string) {
+  const p = await getPub(pubId);
+  await requireBrandManager(p.brandId);
+  const fresh = await buildSnapshot(p.menuId);
+  if (!fresh) throw new DataError("That menu no longer exists.");
+  if (fresh.hasUnknownAllergens) throw new DataError("A dish now has unconfirmed allergen data, so guests keep the last approved version.");
+  const { sb } = await session();
+  const { error } = await sb.from("publications").update({ snapshot_id: (await saveSnapshot(p.menuId)).id }).eq("id", pubId);
+  if (error) fail(error);
+}
+
+export async function getSiteMenus(orgSlug: string, siteSlug: string): Promise<SiteMenus | null> {
+  await connection();
+  const { sb } = await session();
+  const { data } = await sb.rpc("public_site", { p_org: orgSlug, p_site: siteSlug });
+  if (!data) return null;
+  const d = data as Row;
+  const pubs = ((d.pubs as Row[]) ?? []).map((p) => ({
+    id: p.id as string, brandId: (d.brand as Row).id as string, menuId: p.menuId as string, stage: p.stage as Publication["stage"],
+    sort: p.sort as number, liveFrom: (p.liveFrom as string) ?? null, autoRefresh: Boolean(p.autoRefresh),
+    snapshot: p.body as unknown as MenuSnapshot, publishedBy: null, updatedAt: p.updatedAt as string,
+  }));
+  const live = effectiveLive(pubs);
+  const menus = await Promise.all(live.map(async (p) => guestVersion(p.snapshot, p.autoRefresh ? await buildSnapshot(p.menuId, orgSlug) : null, p.autoRefresh)));
+  return {
+    org: mapOrg(d.org as Row), brand: { ...mapBrand(d.brand as Row), guest: mapGuest(d.guest as Row) }, site: mapSite(d.site as Row), menus,
+    allergens: ((d.allergens as Row[]) ?? []).map(mapAllergen), diets: ((d.diets as Row[]) ?? []).map(mapDiet),
+  };
+}
+
+export async function previewPublication(pubId: string) {
+  await connection();
+  const p = await getPub(pubId);
+  const brand = (await getBrand(p.brandId))!;
+  const fresh = await buildSnapshot(p.menuId);
+  return {
+    fresh,
+    issues: fresh ? missingInfo(fresh, brand.guest) : { blocking: ["The menu no longer exists."], warnings: [] },
+    changedSince: !!fresh && JSON.stringify(fresh.sections) !== JSON.stringify(p.snapshot.sections),
+  };
+}
+
+// ---------- members ----------
+
+export async function listMembers(): Promise<Member[]> {
+  await requireAdmin();
+  const { sb } = await session();
+  const { data, error } = await sb.from("memberships").select("user_id, role, brand_id, status, created_at, profiles(email, first_name, last_name)").eq("org_id", await orgId()).order("created_at");
+  if (error) fail(error);
+  return (data ?? []).map((m) => {
+    const pr = (m as Row).profiles as Row;
+    return {
+      userId: m.user_id as string, email: (pr?.email as string) ?? "", name: [pr?.first_name, pr?.last_name].filter(Boolean).join(" ") || ((pr?.email as string) ?? ""),
+      role: m.role as User["role"], brandId: (m.brand_id as string) ?? null, status: m.status as Member["status"], invitedAt: m.created_at as string,
+    };
+  });
+}
+
+export async function inviteMember(input: { email: string; name: string; role: User["role"]; brandId: string | null }) {
+  await requireAdmin();
+  const email = z.email("Enter a valid email address.").safeParse(input.email.trim().toLowerCase());
+  if (!email.success) throw new DataError(email.error.issues[0].message);
+  if ((input.role === "head_chef" || input.role === "viewer") && !input.brandId) throw new DataError("Head chefs and site chefs need a brand.");
+  const admin = supabaseAdmin();
+  if (!admin) throw new DataError("Inviting needs the server's SUPABASE_SERVICE_ROLE_KEY setting. Ask whoever set up the app to add it.");
+  const org = await orgId();
+  // Logins are shared with your other apps, so the person may already exist.
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const inv = await admin.auth.admin.inviteUserByEmail(email.data, { redirectTo: `${site}/auth/callback?next=/auth/set-password` });
+  let userId = inv.data.user?.id;
+  if (!userId) {
+    for (let page = 1; page <= 20 && !userId; page++) {
+      const { data } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+      userId = data.users.find((u) => u.email?.toLowerCase() === email.data)?.id;
+      if (!data.users.length) break;
+    }
+  }
+  if (!userId) throw new DataError("The invite couldn't be sent. Check the email address and try again.");
+  const [first, ...rest] = input.name.trim().split(/\s+/);
+  await admin.from("profiles").upsert({ id: userId, email: email.data, first_name: first || null, last_name: rest.join(" ") || null }, { onConflict: "id" });
+  const { error } = await admin.from("memberships").insert({ org_id: org, user_id: userId, role: input.role, brand_id: input.brandId });
+  if (error) {
+    if (error.code === "23505") throw new DataError("That person is already in your group.");
+    fail(error);
+  }
+}
+
+export async function updateMember(userId: string, patch: { role?: User["role"]; brandId?: string | null; status?: "active" | "disabled" }) {
+  const me = await requireAdmin();
+  if (userId === me.id && (patch.status === "disabled" || (patch.role && patch.role !== "org_admin")))
+    throw new DataError("You can't remove your own admin access. Ask another admin.");
+  const members = await listMembers();
+  const m = members.find((x) => x.userId === userId);
+  if (!m) throw new DataError("That person is no longer in your group.");
+  const next = { ...m, ...patch };
+  if ((next.role === "head_chef" || next.role === "viewer") && !next.brandId) throw new DataError("Head chefs and site chefs need a brand.");
+  if (m.role === "org_admin" && ((patch.role && patch.role !== "org_admin") || patch.status === "disabled")
+      && !members.some((x) => x.userId !== userId && x.role === "org_admin" && x.status === "active"))
+    throw new DataError("There must always be at least one admin.");
+  const { sb } = await session();
+  const row: Row = {};
+  if (patch.role) row.role = patch.role;
+  if (patch.brandId !== undefined) row.brand_id = patch.brandId;
+  if (patch.status) row.status = patch.status;
+  const { error } = await sb.from("memberships").update(row).eq("org_id", await orgId()).eq("user_id", userId);
+  if (error) fail(error);
 }

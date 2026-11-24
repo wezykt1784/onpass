@@ -13,7 +13,7 @@ async function Menu({ params }: { params: PageProps<"/m/[org]/[menuId]">["params
   if (!org) notFound();
   const [snap, { allergens, diets }] = await Promise.all([buildSnapshot(menuId, slug), guestLists(slug, menuId)]);
   if (!snap) notFound();
-  return <GuestMenu org={org} snap={snap} allergens={allergens} diets={diets} />;
+  return <GuestMenu org={org} menus={[snap]} allergens={allergens} diets={diets} venue={`${org.name} · preview, not published`} />;
 }
 
 export default function GuestPage({ params }: PageProps<"/m/[org]/[menuId]">) {

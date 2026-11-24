@@ -7,7 +7,7 @@ import { z } from "zod";
 import * as data from "./data";
 import { useSupabase } from "./supabase/env";
 import { rateLimit } from "./rate-limit";
-import type { MenuRow, Product, Recipe, RecipeLine } from "./types";
+import type { Brand, MenuRow, Product, Recipe, RecipeLine, Site, User } from "./types";
 
 export type ActionResult<T = unknown> = { ok: true; value?: T } | { ok: false; error: string };
 
@@ -155,4 +155,65 @@ export async function copyMenuAction(menuId: string): Promise<ActionResult> {
 
 export async function isDemoMode() {
   return !useSupabase;
+}
+
+// ---------- milestone 2: brands, sites, publishing, people ----------
+
+export async function saveBrandAction(input: Omit<Brand, "id" | "updatedAt" | "logoPath"> & { id?: string }): Promise<ActionResult<string>> {
+  return run(async () => (await data.upsertBrand(input)).id);
+}
+
+export async function uploadBrandLogoAction(brandId: string, form: FormData): Promise<ActionResult> {
+  return run(async () => {
+    const file = form.get("logo");
+    if (!(file instanceof File) || file.size === 0) throw new data.DataError("Choose a logo first.");
+    if (!/^image\/(jpeg|png)$/.test(file.type)) throw new data.DataError("Use a PNG or JPG logo.");
+    if (file.size > MAX_PHOTO) throw new data.DataError("That logo is over 4 MB.");
+    await data.setBrandLogo(brandId, file);
+  });
+}
+
+export async function removeBrandLogoAction(brandId: string): Promise<ActionResult> {
+  return run(() => data.setBrandLogo(brandId, null));
+}
+
+export async function saveSiteAction(input: Omit<Site, "id"> & { id?: string }): Promise<ActionResult<string>> {
+  return run(async () => (await data.upsertSite(input)).id);
+}
+
+export async function setMenuBrandsAction(menuId: string, brandIds: string[]): Promise<ActionResult> {
+  return run(() => data.setMenuBrands(menuId, brandIds));
+}
+
+export async function stageMenuAction(brandId: string, menuId: string): Promise<ActionResult> {
+  return run(() => data.stageMenu(brandId, menuId));
+}
+
+export async function pushLiveAction(pubId: string, liveFrom: string | null): Promise<ActionResult> {
+  return run(() => data.pushLive(pubId, liveFrom));
+}
+
+export async function unpublishAction(pubId: string): Promise<ActionResult> {
+  return run(() => data.unpublish(pubId));
+}
+
+export async function movePublicationAction(pubId: string, dir: -1 | 1): Promise<ActionResult> {
+  return run(() => data.movePublication(pubId, dir));
+}
+
+export async function setAutoRefreshAction(pubId: string, on: boolean): Promise<ActionResult> {
+  return run(() => data.setAutoRefresh(pubId, on));
+}
+
+export async function approveRefreshAction(pubId: string): Promise<ActionResult> {
+  return run(() => data.approveRefresh(pubId));
+}
+
+export async function inviteMemberAction(input: { email: string; name: string; role: User["role"]; brandId: string | null }): Promise<ActionResult> {
+  if (!rateLimit(`invite:${await clientIp()}`, 30, 60 * 60_000)) return { ok: false, error: "Too many invites in an hour. Try again later." };
+  return run(() => data.inviteMember(input));
+}
+
+export async function updateMemberAction(userId: string, patch: { role?: User["role"]; brandId?: string | null; status?: "active" | "disabled" }): Promise<ActionResult> {
+  return run(() => data.updateMember(userId, patch));
 }

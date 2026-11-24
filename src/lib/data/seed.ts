@@ -1,6 +1,6 @@
 // Demo data so every screen has something real to show. All dishes, codes, suppliers and
 // nutrition figures here are invented for testing. They are not real specs.
-import type { Allergen, Diet, Menu, Organisation, Product, Recipe, Supplier, User } from "../types";
+import type { Allergen, Brand, Diet, Menu, Organisation, Product, Recipe, Site, Supplier, User } from "../types";
 
 const now = "2026-11-24T09:00:00.000Z";
 
@@ -14,9 +14,27 @@ export const seedOrg: Organisation = {
 };
 
 export const seedUsers: User[] = [
-  { id: "u-central", name: "Demo Central Chef", email: "central@demo.test", role: "central_chef" },
-  { id: "u-head", name: "Demo Head Chef", email: "head@demo.test", role: "head_chef" },
-  { id: "u-site", name: "Demo Site Chef", email: "site@demo.test", role: "viewer" },
+  { id: "u-admin", name: "Demo Admin", email: "admin@demo.test", role: "org_admin", brandId: null, status: "active" },
+  { id: "u-central", name: "Demo Central Chef", email: "central@demo.test", role: "central_chef", brandId: null, status: "active" },
+  { id: "u-head", name: "Demo Head Chef", email: "head@demo.test", role: "head_chef", brandId: "br-taverns", status: "active" },
+  { id: "u-site", name: "Demo Site Chef", email: "site@demo.test", role: "viewer", brandId: "br-taverns", status: "active" },
+];
+
+const guestDefaults = {
+  disclaimer: "Our kitchens handle all 14 major allergens, so we can't rule out traces. If you have an allergy, please speak to the team before you order.",
+  showKcal: true,
+  headerNote: null,
+};
+
+export const seedBrands: Brand[] = [
+  { id: "br-taverns", name: "Demo Taverns", slug: "demo-taverns", logoPath: null, enabled: true, guest: { ...guestDefaults, headerNote: "Food served 12 to 9, every day" }, updatedAt: now },
+  { id: "br-hotels", name: "Demo Hotels", slug: "demo-hotels", logoPath: null, enabled: true, guest: { ...guestDefaults }, updatedAt: now },
+];
+
+export const seedSites: Site[] = [
+  { id: "si-arms", brandId: "br-taverns", name: "The Example Arms", slug: "example-arms", address: "1 High Street, London", enabled: true },
+  { id: "si-harbour", brandId: "br-taverns", name: "The Harbour Inn", slug: "harbour-inn", address: "2 Quay Road, Brighton", enabled: true },
+  { id: "si-seaview", brandId: "br-hotels", name: "Seaview Hotel", slug: "seaview", address: "3 Marine Parade, Worthing", enabled: true },
 ];
 
 const A = (code: string, name: string, sort: number, parentId: string | null = null): Allergen => ({
@@ -230,6 +248,7 @@ export const seedMenus: Menu[] = [
     subHeading1: null,
     subHeading2: null,
     menuDate: "2026-11-24",
+    brandIds: ["br-taverns"],
     updatedAt: now,
     rows: [
       {

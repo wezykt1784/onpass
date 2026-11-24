@@ -24,7 +24,7 @@ export default async function SpecBookPage({ params }: PageProps<"/app/menus/[id
         <ChevronLeft aria-hidden className="size-4" />{d.menu.name}
       </Link>
       <PageHeader title="Spec book" sub={`${d.menu.name}${d.menu.menuDate ? `, dated ${dateUk(d.menu.menuDate)}` : ""}`} />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="p-5">
           <h2 className="mb-1 text-lg">What&apos;s in it</h2>
           <p className="mb-4 text-text-muted">About {pages} pages, A4 landscape: a cover, a page for each section, one page per dish, and the batch recipes for each dish straight after it.</p>

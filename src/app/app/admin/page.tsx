@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui";
 export const metadata: Metadata = { title: "Admin" };
 const items = [
   { href: "/app/admin/brands", icon: Building2, title: "Brands and sites", text: "Brands, the pubs and hotels under them, and their guest menu settings." },
-  { href: "/app/admin/users", icon: Users, title: "Users", text: "Invite chefs, set roles and which brands they work on." },
+  { href: "/app/admin/users", icon: Users, title: "People", text: "Invite chefs, set roles and which brand they work on." },
   { href: "/app/admin/lists", icon: ListChecks, title: "Lists", text: "Allergens, diets, categories and price bands." },
   { href: "/app/admin/cookbook-styles", icon: Palette, title: "Spec book styles", text: "Colours, logo, cover page and what each spec book shows." },
 ];

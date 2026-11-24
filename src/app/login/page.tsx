@@ -17,7 +17,7 @@ export default function LoginPage() {
           {useSupabase && <p className="mt-4 text-center text-sm"><Link href="/forgot-password" className="font-semibold text-accent underline">Forgot your password?</Link></p>}
         </div>
         {!useSupabase && (
-          <p className="mt-4 text-center text-xs text-text-muted">Demo build: sign in as central@demo.test, head@demo.test or site@demo.test. Any password.</p>
+          <p className="mt-4 text-center text-xs text-text-muted">Demo build: sign in as admin@demo.test, central@demo.test, head@demo.test or site@demo.test. Any password.</p>
         )}
       </div>
     </main>

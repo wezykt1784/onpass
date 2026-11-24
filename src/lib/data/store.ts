@@ -3,7 +3,7 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
-import type { Allergen, Diet, Menu, Organisation, Product, Recipe, Supplier, User } from "../types";
+import type { Allergen, Brand, Diet, Menu, Organisation, Product, Publication, Recipe, Site, Supplier, User } from "../types";
 import * as seed from "./seed";
 
 export interface StoreData {
@@ -15,6 +15,9 @@ export interface StoreData {
   products: Product[];
   recipes: Recipe[];
   menus: Menu[];
+  brands: Brand[];
+  sites: Site[];
+  publications: Publication[];
 }
 
 const DIR = path.join(process.cwd(), ".data");
@@ -30,6 +33,9 @@ function fresh(): StoreData {
     products: seed.seedProducts,
     recipes: seed.seedRecipes,
     menus: seed.seedMenus,
+    brands: seed.seedBrands,
+    sites: seed.seedSites,
+    publications: [],
   });
 }
 
@@ -38,7 +44,13 @@ const g = globalThis as unknown as { __specStore?: StoreData };
 export function store(): StoreData {
   if (!g.__specStore) {
     try {
-      g.__specStore = JSON.parse(fs.readFileSync(FILE, "utf8")) as StoreData;
+      const loaded = JSON.parse(fs.readFileSync(FILE, "utf8")) as StoreData;
+      // Stores saved before milestone 2 lack these; fill them from the seed.
+      loaded.brands ??= structuredClone(seed.seedBrands);
+      loaded.sites ??= structuredClone(seed.seedSites);
+      loaded.publications ??= [];
+      for (const m of loaded.menus) m.brandIds ??= [];
+      g.__specStore = loaded;
     } catch {
       g.__specStore = fresh();
     }

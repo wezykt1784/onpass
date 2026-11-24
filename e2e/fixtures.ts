@@ -1,7 +1,7 @@
 import { test as base, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-export const USERS = { central: "u-central", head: "u-head", site: "u-site" } as const;
+export const USERS = { admin: "u-admin", central: "u-central", head: "u-head", site: "u-site" } as const;
 
 type Fixtures = {
   /** Console errors, page errors and 5xx responses seen during the test. Must be empty at the end. */

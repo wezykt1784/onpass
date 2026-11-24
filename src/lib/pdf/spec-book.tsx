@@ -60,10 +60,10 @@ const s = StyleSheet.create({
 
 type Photo = { data: Buffer; format: "png" | "jpg" };
 
-/** Load every dish photo once, before rendering (react-pdf can't await inside the tree). */
-async function loadPhotos(d: Data): Promise<Map<string, Photo>> {
+/** Load every dish photo and the logo once, before rendering (react-pdf can't await inside the tree). */
+async function loadPhotos(d: Data, logoPath: string | null): Promise<Map<string, Photo>> {
   const out = new Map<string, Photo>();
-  const paths = d.sections.flatMap((s) => s.dishes.map((x) => x.recipe.photoPath)).filter((p): p is string => !!p && /\.(jpg|png)$/.test(p));
+  const paths = [logoPath, ...d.sections.flatMap((s) => s.dishes.map((x) => x.recipe.photoPath))].filter((p): p is string => !!p && /\.(jpg|png)$/.test(p));
   await Promise.all(paths.map(async (p) => {
     const format = p.endsWith(".png") ? ("png" as const) : ("jpg" as const);
     try {
@@ -134,12 +134,14 @@ function Footer({ printed, label }: { printed: string; label: string }) {
   );
 }
 
-function SpecBook({ d, photos }: { d: Data; photos: Map<string, Photo> }) {
+function SpecBook({ d, photos, logo }: { d: Data; photos: Map<string, Photo>; logo: Photo | null }) {
   const printed = dateUk(new Date().toISOString());
   const book = d.menu.displayName ? `${d.menu.name}` : d.menu.name;
   return (
     <Document title={`${d.menu.name} spec book`} author={d.org.name} creator="Spec">
       <Page size="A4" orientation="landscape" style={[s.page, { justifyContent: "center", alignItems: "center" }]}>
+        {/* eslint-disable-next-line jsx-a11y/alt-text -- PDF images have no alt attribute */}
+        {logo && <Image src={logo} style={{ maxWidth: 220, maxHeight: 90, objectFit: "contain", marginBottom: 18 }} />}
         <Text style={{ fontSize: 14, fontWeight: 600, color: c["text-muted"], marginBottom: 10 }}>{d.org.name}</Text>
         <Text style={{ fontSize: 30, fontWeight: 700 }}>{d.menu.name}</Text>
         {d.menu.menuDate && <Text style={{ fontSize: 14, marginTop: 6 }}>{dateUk(d.menu.menuDate)}</Text>}
@@ -225,8 +227,9 @@ function SpecBook({ d, photos }: { d: Data; photos: Map<string, Photo> }) {
   );
 }
 
-export async function renderSpecBook(d: Data): Promise<Buffer> {
+/** logoPath: the brand logo for the cover, if the menu's brand has one. */
+export async function renderSpecBook(d: Data, logoPath: string | null = null): Promise<Buffer> {
   registerFonts();
-  const photos = await loadPhotos(d);
-  return renderToBuffer(<SpecBook d={d} photos={photos} />);
+  const photos = await loadPhotos(d, logoPath);
+  return renderToBuffer(<SpecBook d={d} photos={photos} logo={logoPath ? photos.get(logoPath) ?? null : null} />);
 }
