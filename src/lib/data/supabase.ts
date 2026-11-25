@@ -269,7 +269,8 @@ export async function recipesUsingProduct(productId: string): Promise<Recipe[]> 
 
 // ---------- recipes ----------
 
-const RECIPE_SELECT = "*, recipe_lines(*), recipe_allergen_overrides(*), recipe_rollups(*)";
+// recipe_lines points at recipes twice (its own recipe and a sub-recipe), so name the link.
+const RECIPE_SELECT = "*, recipe_lines!recipe_lines_recipe_id_fkey(*), recipe_allergen_overrides(*), recipe_rollups(*)";
 
 const mapRecipe = (r: Row): Recipe => ({
   id: r.id as string,
