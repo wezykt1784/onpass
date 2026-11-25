@@ -779,6 +779,18 @@ export async function updateMember(userId: string, patch: { role?: User["role"];
   save();
 }
 
+/** Deletes a person whose access is already removed: their name and email go; their recipes and history stay, unsigned. */
+export async function deleteMember(userId: string) {
+  const me = await requireAdmin();
+  if (userId === me.id) throw new DataError("You can't delete yourself. Ask another admin.");
+  const s = store();
+  const u = s.users.find((x) => x.id === userId);
+  if (!u) throw new DataError("That person is no longer in your group.");
+  if (u.status !== "disabled") throw new DataError("Remove their access first, then delete them.");
+  s.users = s.users.filter((x) => x.id !== userId);
+  save();
+}
+
 /** Landing page early list. Signing up twice with the same email just updates the details. */
 export async function joinEarlyList(input: EarlyListInput): Promise<void> {
   const problem = earlyListProblem(input);

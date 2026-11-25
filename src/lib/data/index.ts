@@ -65,4 +65,5 @@ export const previewPublication = impl.previewPublication;
 export const listMembers = impl.listMembers;
 export const inviteMember = impl.inviteMember;
 export const updateMember = impl.updateMember;
+export const deleteMember = impl.deleteMember;
 export const joinEarlyList = impl.joinEarlyList;

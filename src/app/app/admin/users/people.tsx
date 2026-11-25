@@ -1,8 +1,9 @@
 "use client";
 import { useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
-import { inviteMemberAction, updateMemberAction } from "@/lib/actions";
+import { deleteMemberAction, inviteMemberAction, updateMemberAction } from "@/lib/actions";
 import type { Member, User } from "@/lib/types";
+import { BRAND } from "@/lib/brand";
 import { Button, Card, Field, Notice, Pill, inputClass } from "@/components/ui";
 
 const ROLES: { value: User["role"]; label: string; help: string }[] = [
@@ -69,7 +70,14 @@ export function People({ me, members, brands, demo }: { me: string; members: Mem
                     {!self && (m.status === "active" ? (
                       <Button size="sm" variant="ghost" disabled={pending} onClick={() => { if (confirm(`Stop ${m.name} signing in? Their recipes and history stay.`)) update(m.userId, { status: "disabled" }); }}>Remove access</Button>
                     ) : (
-                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => update(m.userId, { status: "active" })}>Give access back</Button>
+                      <span className="inline-flex flex-wrap justify-end gap-1">
+                        <Button size="sm" variant="ghost" disabled={pending} onClick={() => update(m.userId, { status: "active" })}>Give access back</Button>
+                        <Button size="sm" variant="ghost" disabled={pending} aria-label={`Delete ${m.name}`} onClick={() => {
+                          if (!confirm(`Delete ${m.name}? Their name and email are removed from ${BRAND.name} for good. Recipes they wrote stay, without their name. This can't be undone.`)) return;
+                          setError(null);
+                          start(async () => { const r = await deleteMemberAction(m.userId); if (!r.ok) setError(r.error); });
+                        }}>Delete</Button>
+                      </span>
                     ))}
                   </td>
                 </tr>

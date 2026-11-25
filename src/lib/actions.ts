@@ -214,6 +214,10 @@ export async function inviteMemberAction(input: { email: string; name: string; r
   return run(() => data.inviteMember(input));
 }
 
+export async function deleteMemberAction(userId: string): Promise<ActionResult> {
+  return run(() => data.deleteMember(userId));
+}
+
 export async function updateMemberAction(userId: string, patch: { role?: User["role"]; brandId?: string | null; status?: "active" | "disabled" }): Promise<ActionResult> {
   return run(() => data.updateMember(userId, patch));
 }

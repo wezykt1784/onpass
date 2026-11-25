@@ -1085,6 +1085,33 @@ export async function updateMember(userId: string, patch: { role?: User["role"];
   if (error) fail(error);
 }
 
+/**
+ * Deletes a person whose access is already removed. Their membership goes; if they're in no other
+ * group, their Onpass profile (name, email) goes too, and their recipes and history stay unsigned.
+ * The login itself is deleted only when ONPASS_OWNS_AUTH=true, i.e. the database project isn't
+ * shared with other apps that use the same logins.
+ */
+export async function deleteMember(userId: string) {
+  const me = await requireAdmin();
+  if (userId === me.id) throw new DataError("You can't delete yourself. Ask another admin.");
+  const m = (await listMembers()).find((x) => x.userId === userId);
+  if (!m) throw new DataError("That person is no longer in your group.");
+  if (m.status !== "disabled") throw new DataError("Remove their access first, then delete them.");
+  const admin = supabaseAdmin();
+  if (!admin) throw new DataError("Deleting people needs the server's SUPABASE_SERVICE_ROLE_KEY setting. Ask whoever set up the app to add it.");
+  const { error } = await admin.from("memberships").delete().eq("org_id", await orgId()).eq("user_id", userId);
+  if (error) fail(error);
+  const { count, error: cErr } = await admin.from("memberships").select("user_id", { count: "exact", head: true }).eq("user_id", userId);
+  if (cErr) fail(cErr);
+  if (count) return;
+  const { error: pErr } = await admin.from("profiles").delete().eq("id", userId);
+  if (pErr) fail(pErr);
+  if (process.env.ONPASS_OWNS_AUTH === "true") {
+    const { error: aErr } = await admin.auth.admin.deleteUser(userId);
+    if (aErr) throw new DataError("Their details are deleted, but their login couldn't be. Try again, or delete it in the Supabase dashboard.");
+  }
+}
+
 /** Landing page early list, through a locked-down database function (guests can add, nobody can read back). */
 export async function joinEarlyList(input: EarlyListInput): Promise<void> {
   const problem = earlyListProblem(input);

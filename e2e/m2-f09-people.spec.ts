@@ -69,6 +69,27 @@ test.describe("F09 admin invites people and sets what they can do", () => {
     await expect(me.getByRole("button", { name: "Remove access" })).toHaveCount(0);
   });
 
+  test("F09-E6 a removed person can be deleted for good", async ({ page }) => {
+    await page.goto("/app/admin/users");
+    await ready(page);
+    await page.getByLabel("Email").fill("leaver@demo.test");
+    await page.getByLabel("Name", { exact: true }).fill("Lee Leaver");
+    await page.getByRole("button", { name: "Add person" }).click();
+    const row = page.getByRole("row", { name: /Lee Leaver/ });
+    await expect(row).toBeVisible();
+    // Delete only appears once access is removed
+    await expect(row.getByRole("button", { name: "Delete Lee Leaver" })).toHaveCount(0);
+    page.once("dialog", (d) => d.accept());
+    await row.getByRole("button", { name: "Remove access" }).click();
+    await expect(row.getByText("No access")).toBeVisible();
+    page.once("dialog", (d) => d.accept());
+    await row.getByRole("button", { name: "Delete Lee Leaver" }).click();
+    await expect(row).toHaveCount(0);
+    await page.reload();
+    await ready(page);
+    await expect(page.getByText("leaver@demo.test")).toHaveCount(0);
+  });
+
   test("F09-N2 only admins see the people screen; it fits a phone", async ({ page, signInAs }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/app/admin/users");
