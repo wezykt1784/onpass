@@ -1,9 +1,10 @@
+// Milestone 2 specs change the demo data (they confirm allergens, publish menus), so their files start with m2- to run after f01-f08.
 import { test, expect, ready, appAlert, noSidewaysScroll } from "./fixtures";
 
-test.describe("F09 admin sets up brands and sites", () => {
+test.describe("F04a admin sets up brands and sites", () => {
   test.beforeEach(async ({ signInAs }) => { await signInAs("admin"); });
 
-  test("F09-H1 create a brand, add a site, get its QR code", async ({ page, axe }) => {
+  test("F04-H1 create a brand, add a site, get its QR code", async ({ page, axe }) => {
     await page.goto("/app/admin/brands");
     await ready(page);
     await expect(page.getByRole("link", { name: /Demo Taverns/ })).toBeVisible();
@@ -30,7 +31,7 @@ test.describe("F09 admin sets up brands and sites", () => {
     expect(file.suggestedFilename()).toMatch(/\.png$/);
   });
 
-  test("F09-E1 two brands can't share a web name", async ({ page }) => {
+  test("F04-E1 two brands can't share a web name", async ({ page }) => {
     await page.goto("/app/admin/brands/new");
     await ready(page);
     await page.getByLabel("Brand name").fill("Demo Taverns copy");
@@ -39,13 +40,13 @@ test.describe("F09 admin sets up brands and sites", () => {
     await expect(appAlert(page)).toContainText(/already/i);
   });
 
-  test("F09-E2 head chefs can't open brand settings", async ({ page, signInAs }) => {
+  test("F04-N1 head chefs can't open brand settings", async ({ page, signInAs }) => {
     await signInAs("head");
     await page.goto("/app/admin/brands");
     await expect(page.getByText(/Only your group's admins can change this/).first()).toBeVisible();
   });
 
-  test("F09-H2 a brand logo goes on the spec book cover and the guest page", async ({ page }) => {
+  test("F04-H2 a brand logo goes on the spec book cover and the guest page", async ({ page }) => {
     const images = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Subtype\s*\/Image/g) ?? []).length;
     const before = images(await (await page.request.get("/api/spec-book/me-winter")).body());
 
@@ -64,7 +65,7 @@ test.describe("F09 admin sets up brands and sites", () => {
     await expect(page.getByRole("img", { name: "Demo Taverns" })).toBeVisible();
   });
 
-  test("F09-E3 brand page fits a phone", async ({ page }) => {
+  test("F04-E2 brand page fits a phone", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/app/admin/brands/br-taverns");
     await ready(page);

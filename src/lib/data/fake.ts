@@ -648,9 +648,9 @@ export async function stageMenu(brandId: string, menuId: string): Promise<Public
 export async function pushLive(pubId: string, liveFrom: string | null): Promise<void> {
   const s = store();
   const p = s.publications.find((x) => x.id === pubId);
-  if (!p) throw new DataError("That menu is no longer in staging.");
+  if (!p) throw new DataError("That menu is no longer in staging. Reload the page to see the latest.");
   const u = await requireBrandManager(p.brandId);
-  if (p.stage !== "staging") throw new DataError("Only a staging menu can go live.");
+  if (p.stage !== "staging") throw new DataError("Someone has already put this menu live. Reload the page to see the latest.");
   const brand = s.brands.find((b) => b.id === p.brandId)!;
   const fresh = snapshotOf(p.menuId);
   if (!fresh) throw new DataError("That menu no longer exists.");
@@ -720,10 +720,11 @@ export async function getSiteMenus(orgSlug: string, siteSlug: string): Promise<S
   await connection();
   const s = store();
   if (s.org.slug !== orgSlug) return null;
-  const site = s.sites.find((x) => x.slug === siteSlug && x.enabled);
-  const brand = site && s.brands.find((b) => b.id === site.brandId && b.enabled);
+  const site = s.sites.find((x) => x.slug === siteSlug);
+  const brand = site && s.brands.find((b) => b.id === site.brandId);
   if (!site || !brand) return null;
-  const live = effectiveLive(s.publications.filter((p) => p.brandId === brand.id));
+  // Switched off: the page still answers, with no menus, so a printed QR shows "offline" rather than "not found".
+  const live = site.enabled && brand.enabled ? effectiveLive(s.publications.filter((p) => p.brandId === brand.id)) : [];
   const menus = live.map((p) => guestVersion(p.snapshot, snapshotOf(p.menuId), p.autoRefresh));
   return { org: s.org, brand, site, menus, allergens: [...s.allergens].sort((a, b) => a.sort - b.sort), diets: [...s.diets].sort((a, b) => a.sort - b.sort) };
 }

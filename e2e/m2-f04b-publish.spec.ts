@@ -1,4 +1,5 @@
-import { test, expect, ready, appAlert, noSidewaysScroll, saveRecipe } from "./fixtures";
+// Milestone 2 specs change the demo data (they confirm allergens, publish menus), so their files start with m2- to run after f01-f08.
+import { test, expect, ready, appAlert, noSidewaysScroll, saveRecipe, confirmChipotle } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 async function board(page: Page) {
@@ -6,26 +7,18 @@ async function board(page: Page) {
   await ready(page);
 }
 
-async function confirmChipotle(page: Page) {
-  await page.goto("/app/products/pr-chipotle");
-  await ready(page);
-  await page.getByLabel("I've checked these against the supplier spec").check();
-  await page.getByRole("button", { name: "Save product" }).click();
-  await expect(page.getByText(/^Saved/)).toBeVisible();
-}
-
-test.describe("F10 publish a menu to a brand's sites", () => {
+test.describe("F04b publish a menu to a brand's sites", () => {
   test.describe.configure({ mode: "serial" });
   test.beforeEach(async ({ signInAs }) => { await signInAs("central"); });
 
-  test("F10-E1 nothing live: the site page says so", async ({ page }) => {
+  test("F04-E3 nothing live: the site page says so", async ({ page }) => {
     await page.context().clearCookies();
     await page.goto("/s/demo/example-arms");
     await expect(page.getByRole("heading", { name: "The Example Arms" })).toBeVisible();
     await expect(page.getByText(/isn't online right now/)).toBeVisible();
   });
 
-  test("F10-E2 a dish with unconfirmed allergens blocks going live", async ({ page, axe }) => {
+  test("F04-N2 a dish with unconfirmed allergens blocks going live", async ({ page, axe }) => {
     await board(page);
     await page.getByRole("button", { name: "Add to staging: Winter menu 2026", exact: true }).click();
     const block = page.getByRole("group", { name: "Must fix before going live" });
@@ -35,7 +28,7 @@ test.describe("F10 publish a menu to a brand's sites", () => {
     await axe("S12 publish board");
   });
 
-  test("F10-H1 fix the data, refresh, go live, guests see it at every site", async ({ page }) => {
+  test("F04-H3 fix the data, refresh, go live, guests see it at every site", async ({ page }) => {
     await confirmChipotle(page);
     await board(page);
     await page.getByRole("button", { name: "Refresh staging copy of Winter menu 2026", exact: true }).click();
@@ -54,7 +47,7 @@ test.describe("F10 publish a menu to a brand's sites", () => {
     await expect(page.getByText(/isn't online right now/)).toBeVisible();
   });
 
-  test("F10-E3 held changes wait for sign-off, then reach guests", async ({ page, signInAs }) => {
+  test("F04-E4 held changes wait for sign-off, then reach guests", async ({ page, signInAs }) => {
     await board(page);
     const hold = page.getByLabel("Hold recipe changes until a central chef signs them off");
     await hold.click(); // saved on the server, so the tick appears when it comes back
@@ -81,7 +74,7 @@ test.describe("F10 publish a menu to a brand's sites", () => {
     await expect(page.getByText("Charred corn, chipotle butter")).toBeVisible();
   });
 
-  test("F10-E4 a scheduled menu stays hidden until its time", async ({ page }) => {
+  test("F04-E5 a scheduled menu stays hidden until its time", async ({ page }) => {
     await page.goto("/app/menus/me-winter");
     await ready(page);
     await page.getByRole("button", { name: "Copy" }).click();
@@ -101,14 +94,14 @@ test.describe("F10 publish a menu to a brand's sites", () => {
     await expect(page.getByRole("tab")).toHaveCount(0); // one menu only, no tabs
   });
 
-  test("F10-E5 a head chef from another brand can't publish here", async ({ page, signInAs }) => {
+  test("F04-N3 a head chef from another brand can't publish here", async ({ page, signInAs }) => {
     await signInAs("head");
     await page.goto("/app/publish/br-hotels");
     await ready(page);
     await expect(page.getByRole("button", { name: /Add to staging/ })).toHaveCount(0);
   });
 
-  test("F10-E6 take offline, and the board fits a phone", async ({ page }) => {
+  test("F04-E6 take offline, and the board fits a phone", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await board(page);
     await noSidewaysScroll(page);

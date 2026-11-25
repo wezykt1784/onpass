@@ -909,7 +909,7 @@ async function getPub(pubId: string): Promise<Publication> {
 export async function pushLive(pubId: string, liveFrom: string | null): Promise<void> {
   const p = await getPub(pubId);
   const u = await requireBrandManager(p.brandId);
-  if (p.stage !== "staging") throw new DataError("Only a staging menu can go live.");
+  if (p.stage !== "staging") throw new DataError("Someone has already put this menu live. Reload the page to see the latest.");
   const brand = (await getBrand(p.brandId))!;
   const { id: snapshotId, snap } = await saveSnapshot(p.menuId);
   const issues = missingInfo(snap, brand.guest);

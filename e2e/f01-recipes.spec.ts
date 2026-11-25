@@ -169,7 +169,7 @@ test.describe("F01 chef builds a batch recipe and the dish that uses it", () => 
 
   test("F01-N3 a recipe that doesn't exist shows not found", async ({ page }) => {
     await page.goto("/app/recipes/does-not-exist");
-    await expect(page.getByText("This page could not be found.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
     await expect(page.locator('head meta[name="robots"][content="noindex"]')).toHaveCount(1);
     // The HTTP status is 200, not 404, because the page streams: BUG-003 (S4).
   });

@@ -3,7 +3,7 @@ import { test, noSidewaysScroll } from "./fixtures";
 // Every back-office screen once at laptop width and once at phone width: accessibility and fit.
 const SCREENS: [string, string][] = [
   ["S02 home", "/app"], ["S08 recipes", "/app/recipes"], ["S08 recipes empty search", "/app/recipes?q=zzzz"],
-  ["S08 recipes filtered", "/app/recipes?allergen=milk&status=approved"],
+  ["S08 recipes filtered", "/app/recipes?allergen=al-milk&status=approved"],
   ["S07 recipe editor", "/app/recipes/re-burger"], ["S09 products", "/app/products"], ["S09 product", "/app/products/pr-bun"],
   ["S03 menus", "/app/menus"], ["S03 menus filtered", "/app/menus?brand=br-hotels"], ["S05 menu editor", "/app/menus/me-winter"],
   ["S13 spec book", "/app/menus/me-winter/spec-book"],

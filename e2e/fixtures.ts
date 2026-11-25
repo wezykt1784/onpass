@@ -85,3 +85,15 @@ export function pdfText(buf: Buffer): string {
   const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
   return execFileSync("pdftotext", ["-layout", "-", "-"], { input: buf }).toString();
 }
+
+/** The demo's one product with unconfirmed allergens. Publishing tests confirm it so the winter menu can go live. */
+export async function confirmChipotle(page: Page) {
+  await page.goto("/app/products/pr-chipotle");
+  await ready(page);
+  const box = page.getByLabel("I've checked these against the supplier spec");
+  if (await box.isChecked()) return;
+  await box.check();
+  await page.getByRole("button", { name: "Save product" }).click();
+  await expect(page.getByText(/^Saved/)).toBeVisible();
+}
+

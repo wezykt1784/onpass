@@ -1,9 +1,10 @@
+// Milestone 2 specs change the demo data (they confirm allergens, publish menus), so their files start with m2- to run after f01-f08.
 import { test, expect, ready } from "./fixtures";
 
-test.describe("F12 recipe and menu filters", () => {
+test.describe("FLT recipe and menu filters (S08, S03)", () => {
   test.beforeEach(async ({ signInAs }) => { await signInAs("central"); });
 
-  test("F12-H1 recipes containing milk", async ({ page }) => {
+  test("FLT-H1 recipes containing milk", async ({ page }) => {
     await page.goto("/app/recipes");
     await ready(page);
     await page.getByLabel("Contains").selectOption({ label: "Milk" });
@@ -16,7 +17,7 @@ test.describe("F12 recipe and menu filters", () => {
     await expect(recipe("Heritage tomato salad")).toBeVisible();
   });
 
-  test("F12-E1 missing allergen data and drafts", async ({ page }) => {
+  test("FLT-E1 missing allergen data and drafts", async ({ page }) => {
     await page.goto("/app/recipes?allergen=missing");
     await ready(page);
     // every recipe listed is flagged as missing data, and complete ones are left out
@@ -31,7 +32,7 @@ test.describe("F12 recipe and menu filters", () => {
     await expect(page).toHaveURL(/\/app\/recipes$/);
   });
 
-  test("F12-E2 menus by brand and by live state", async ({ page, axe }) => {
+  test("FLT-E2 menus by brand and by live state", async ({ page, axe }) => {
     await page.goto("/app/menus");
     await ready(page);
     await page.getByLabel("Brand").selectOption({ label: "Demo Hotels" });
@@ -41,5 +42,26 @@ test.describe("F12 recipe and menu filters", () => {
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("link", { name: /Winter menu 2026/ }).first()).toBeVisible();
     await axe("S04 menus list with filters");
+  });
+
+  test("FLT-E3 nonsense in the address doesn't break the list", async ({ page }) => {
+    await page.goto("/app/recipes?allergen=zzz&status=bad&kind=x&q=");
+    await ready(page);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByLabel("Status")).toHaveValue("");
+    await page.goto("/app/menus?brand=nope&state=maybe");
+    await ready(page);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+
+  test("FLT-E4 search and filters keep each other, keyboard only", async ({ page }) => {
+    await page.goto("/app/recipes?q=butter");
+    await ready(page);
+    await page.getByLabel("Contains").selectOption({ label: "Milk" });
+    await page.getByRole("button", { name: "Apply" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/q=butter/);
+    await expect(page).toHaveURL(/allergen=al-milk/);
+    await expect(page.getByRole("table").getByRole("link", { name: "Smoked chilli butter", exact: true })).toBeVisible();
   });
 });

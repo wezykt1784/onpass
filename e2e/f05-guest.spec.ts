@@ -93,7 +93,7 @@ test.describe("F05 guest checks what they can eat (signed out)", () => {
   test("F05-N1 wrong addresses show not found", async ({ page }) => {
     for (const url of ["/m/nope/me-winter", "/m/demo/no-such-menu"]) {
       await page.goto(url);
-      await expect(page.getByText("This page could not be found.")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
     }
   });
 

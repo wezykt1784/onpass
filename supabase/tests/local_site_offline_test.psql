@@ -1,0 +1,29 @@
+-- Run on a scratch database: stub, then every migration, then this file. Superuser sets data up; anon reads.
+\set ON_ERROR_STOP 1
+set search_path = spec, public;
+insert into auth.users values ('00000000-0000-0000-0000-00000000000a','chef@a.test'),('00000000-0000-0000-0000-00000000000c','chef@b.test');
+select bootstrap_org('Pub A','pub-a','chef@a.test') as org_a \gset
+select bootstrap_org('Pub B','pub-b','chef@b.test') as org_b \gset
+insert into brands (org_id,name,slug) values (:'org_a','Taverns','taverns') returning id as br \gset
+insert into outputs (org_id,brand_id,kind,name,path_code) values (:'org_a',:'br','guest_web','Guest menu','guest') returning id as out \gset
+insert into sites (org_id,brand_id,name,slug) values (:'org_a',:'br','The Arms','the-arms') returning id as si \gset
+insert into menus (org_id,name) values (:'org_a','Winter') returning id as m1 \gset
+insert into menu_snapshots (org_id,menu_id,body,has_unknown_allergens) values (:'org_a',:'m1','{"name":"Winter","sections":[]}',false) returning id as snap \gset
+insert into publications (org_id,output_id,menu_id,stage,snapshot_id) values (:'org_a',:'out',:'m1','live',:'snap');
+set role anon;
+\echo == on: one menu
+select jsonb_array_length(public_site('pub-a','the-arms')->'pubs') as pubs_on;
+reset role;
+update sites set enabled = false where id = :'si';
+set role anon;
+\echo == site off: site still named, no menus
+select public_site('pub-a','the-arms')->'site'->>'name' as site, jsonb_array_length(public_site('pub-a','the-arms')->'pubs') as pubs_site_off;
+reset role;
+update sites set enabled = true where id = :'si';
+update brands set enabled = false where id = :'br';
+set role anon;
+\echo == brand off: no menus
+select jsonb_array_length(public_site('pub-a','the-arms')->'pubs') as pubs_brand_off;
+\echo == unknown site and other group: null
+select public_site('pub-a','nope') is null as unknown_null, public_site('pub-b','the-arms') is null as other_org_null;
+reset role;
