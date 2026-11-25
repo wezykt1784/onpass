@@ -37,10 +37,11 @@ const s = StyleSheet.create({
   code: { fontFamily: "Plex Mono", fontSize: 8.5 },
   chip: { borderWidth: 1, borderColor: c["on-ink"], borderRadius: 99, paddingVertical: 2, paddingHorizontal: 7, fontSize: 7.5, fontWeight: 600 },
   orgName: { marginLeft: "auto", fontSize: 8.5, fontWeight: 600 },
+  headerLogo: { marginLeft: "auto", backgroundColor: c.bg, borderRadius: 3, paddingVertical: 2, paddingHorizontal: 5 },
   body: { flexDirection: "row", gap: 18, paddingTop: 14 },
   grow: { flexGrow: 1 },
   col: { flex: 1 },
-  photo: { width: 190, height: 140, objectFit: "cover", borderRadius: 6, marginBottom: 10 },
+  photo: { width: 210, height: 150, objectFit: "cover", borderRadius: 6, marginTop: 12 },
   panelHead: { backgroundColor: c.surface, fontWeight: 700, fontSize: 9.5, paddingVertical: 5, paddingHorizontal: 7, borderRadius: 3, marginBottom: 4 },
   th: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: c.border, paddingVertical: 4, color: c["text-muted"], fontSize: 7.5, fontWeight: 600 },
   tr: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: c.border, paddingVertical: 4 },
@@ -125,6 +126,17 @@ function Bar({ bg, fg, border, dashed, children }: { bg?: string; fg: string; bo
   );
 }
 
+/** Right end of the header bar: the brand logo on a white tab, or the group's name when there's no logo. */
+function HeaderBrand({ logo, name }: { logo: Photo | null; name: string }) {
+  if (!logo) return <Text style={s.orgName}>{name}</Text>;
+  return (
+    <View style={s.headerLogo}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- PDF images have no alt attribute */}
+      <Image src={logo} style={{ maxHeight: 18, maxWidth: 90, objectFit: "contain" }} />
+    </View>
+  );
+}
+
 function Footer({ printed, label }: { printed: string; label: string }) {
   return (
     <View style={s.footer} fixed>
@@ -139,9 +151,10 @@ function SpecBook({ d, photos, logo }: { d: Data; photos: Map<string, Photo>; lo
   const book = d.menu.displayName ? `${d.menu.name}` : d.menu.name;
   return (
     <Document title={`${d.menu.name} spec book`} author={d.org.name} creator="Spec">
-      <Page size="A4" orientation="landscape" style={[s.page, { justifyContent: "center", alignItems: "center" }]}>
+      {/* Cover: logo and title in the top third, where chefs used to a Ten Kites book look for them. */}
+      <Page size="A4" orientation="landscape" style={[s.page, { alignItems: "center", paddingTop: 90 }]}>
         {/* eslint-disable-next-line jsx-a11y/alt-text -- PDF images have no alt attribute */}
-        {logo && <Image src={logo} style={{ maxWidth: 220, maxHeight: 90, objectFit: "contain", marginBottom: 18 }} />}
+        {logo && <Image src={logo} style={{ maxWidth: 300, maxHeight: 130, objectFit: "contain", marginBottom: 24 }} />}
         <Text style={{ fontSize: 14, fontWeight: 600, color: c["text-muted"], marginBottom: 10 }}>{d.org.name}</Text>
         <Text style={{ fontSize: 30, fontWeight: 700 }}>{d.menu.name}</Text>
         {d.menu.menuDate && <Text style={{ fontSize: 14, marginTop: 6 }}>{dateUk(d.menu.menuDate)}</Text>}
@@ -154,7 +167,7 @@ function SpecBook({ d, photos, logo }: { d: Data; photos: Map<string, Photo>; lo
           <Text style={{ fontSize: 10, color: c["text-muted"], marginTop: 6 }}>{sec.dishes.length} {sec.dishes.length === 1 ? "dish" : "dishes"}</Text>
           <Footer printed={printed} label={book} />
         </Page>,
-        ...sec.dishes.flatMap(({ recipe: r, displayName, rollup, batches }) => {
+        ...sec.dishes.flatMap(({ recipe: r, displayName, group, rollup, batches }) => {
           const contains = allergenNames(rollup.contains, d.allergens);
           const may = allergenNames(rollup.mayContain, d.allergens);
           const diets = dietNames(rollup.diets, d.diets);
@@ -163,16 +176,17 @@ function SpecBook({ d, photos, logo }: { d: Data; photos: Map<string, Photo>; lo
           return [
             <Page key={r.id} size="A4" orientation="landscape" style={s.page}>
               <View style={s.header}>
-                <Text style={s.headerTitle}>{`${sec.title} // ${displayName}`}</Text>
+                <Text style={s.headerTitle}>{group ? `${sec.title} // ${group}: ${displayName}` : `${sec.title} // ${displayName}`}</Text>
                 {r.code && <Text style={s.code}>{r.code}</Text>}
                 {r.skillRating && <Text style={s.chip}>Skill: {r.skillRating[0].toUpperCase() + r.skillRating.slice(1)}</Text>}
                 {r.timeRating && <Text style={s.chip}>Time: {r.timeRating[0].toUpperCase() + r.timeRating.slice(1)}</Text>}
-                <Text style={s.orgName}>{d.org.name}</Text>
+                <HeaderBrand logo={logo} name={d.org.name} />
               </View>
-              <View style={[s.body, s.grow]}>
+              {/* Photo on top, then ingredients and method side by side, then the bars straight after them. */}
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- PDF images have no alt attribute */}
+              {photo && <Image style={s.photo} src={photo} />}
+              <View style={s.body}>
                 <View style={s.col}>
-                  {/* eslint-disable-next-line jsx-a11y/alt-text -- PDF images have no alt attribute */}
-                  {photo && <Image style={s.photo} src={photo} />}
                   <Text style={s.panelHead}>Ingredients</Text>
                   <Ingredients r={r} d={d} />
                 </View>
@@ -200,7 +214,7 @@ function SpecBook({ d, photos, logo }: { d: Data; photos: Map<string, Photo>; lo
                   <Page key={`${r.id}-b`} size="A4" orientation="landscape" style={s.page}>
                     <View style={s.header} fixed>
                       <Text style={s.headerTitle}>{`Batch recipes // ${displayName}`}</Text>
-                      <Text style={s.orgName}>{d.org.name}</Text>
+                      <HeaderBrand logo={logo} name={d.org.name} />
                     </View>
                     {batches.map((b) => (
                       <View key={b.id} style={[s.body, { marginBottom: 8 }]} wrap={false}>

@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { effectiveLive, guestVersion, missingInfo, slugify } from "../publishing";
 import { supabaseAdmin } from "../supabase/admin";
+import { itemRows, rowsProblem, specSections } from "@/lib/menu-rows";
 
 export class DataError extends Error {}
 
@@ -472,9 +473,11 @@ function nestRows(rows: Row[]): MenuRow[] {
     description: (r.description as string) ?? null, recipeId: (r.recipe_id as string) ?? null, pricePence: null,
   });
   const sorted = [...rows].sort((a, b) => (a.sort as number) - (b.sort as number));
-  return sorted.filter((r) => !r.parent_row_id).map((s) => ({
-    ...mapRow(s), children: sorted.filter((c) => c.parent_row_id === s.id).map(mapRow),
+  // sections > items, info rows and byo groups > byo options
+  const under = (id: unknown): MenuRow[] => sorted.filter((c) => c.parent_row_id === id).map((c) => ({
+    ...mapRow(c), ...(c.kind === "byo" ? { children: under(c.id) } : {}),
   }));
+  return sorted.filter((r) => !r.parent_row_id).map((s) => ({ ...mapRow(s), children: under(s.id) }));
 }
 
 const mapMenu = (m: Row): Menu => ({
@@ -493,7 +496,7 @@ export async function listMenus(q?: string) {
   if (t) query = query.or(`name.ilike.%${t}%,code.ilike.%${t}%`);
   const { data, error } = await query;
   if (error) fail(error);
-  return (data ?? []).map((m) => ({ menu: mapMenu(m), dishCount: ((m.menu_rows as Row[]) ?? []).filter((r) => r.kind === "item").length }));
+  return (data ?? []).map((m) => ({ menu: mapMenu(m), dishCount: ((m.menu_rows as Row[]) ?? []).filter((r) => r.kind === "item").length /* options are item rows too */ }));
 }
 
 export async function getMenu(menuId: string): Promise<Menu | null> {
@@ -537,12 +540,17 @@ export async function updateMenuDetails(menuId: string, d: Pick<Menu, "name" | "
   return mapMenu(data);
 }
 
+const optionInput = z.object({
+  kind: z.literal("item"), title: z.string().max(200).nullable(), description: z.string().nullable().optional(), recipeId: z.uuid(),
+});
 const rowsInput = z.array(z.object({
+  kind: z.literal("section").optional(),
   title: z.string().trim().min(1, "Every section needs a name.").max(120),
   description: z.string().nullable().optional(),
   children: z.array(z.object({
-    kind: z.enum(["item", "info"]), title: z.string().max(200).nullable(), description: z.string().nullable().optional(),
+    kind: z.enum(["item", "info", "byo"]), title: z.string().max(200).nullable(), description: z.string().max(300).nullable().optional(),
     recipeId: z.uuid().nullable(),
+    children: z.array(optionInput).max(60).optional(),
   })).optional(),
 })).max(60);
 
@@ -550,7 +558,8 @@ export async function saveMenuRows(menuId: string, rows: MenuRow[]) {
   await requireEditor();
   const p = rowsInput.safeParse(rows);
   if (!p.success) throw new DataError(p.error.issues[0]?.message ?? "Check the menu.");
-  if (p.data.flatMap((s) => s.children ?? []).filter((c) => c.kind === "item").length > 250) throw new DataError("A menu can hold at most 250 dishes.");
+  const problem = rowsProblem(rows, () => true); // the database checks the recipes still exist
+  if (problem) throw new DataError(problem);
   const { sb } = await session();
   const { error } = await sb.rpc("save_menu_rows", { p_menu: menuId, p_rows: p.data });
   if (error) fail(error);
@@ -585,6 +594,14 @@ export async function buildSnapshot(menuId: string, orgSlug?: string): Promise<M
     description: sec.description,
     rows: (sec.children ?? []).flatMap((row): SnapshotSection["rows"] => {
       if (row.kind === "info") return [{ kind: "info", text: row.title ?? "" }];
+      if (row.kind === "byo") {
+        const options = (row.children ?? []).flatMap(dishOf);
+        return options.length ? [{ kind: "byo", title: row.title ?? "", text: row.description, options }] : [];
+      }
+      return dishOf(row).map((dish) => ({ kind: "item" as const, dish }));
+    }),
+  }));
+  function dishOf(row: MenuRow): SnapshotDish[] {
       const d = row.recipeId ? dishes.get(row.recipeId) : undefined;
       if (!d) return [];
       if (d.unknown) unknownAny = true;
@@ -594,9 +611,8 @@ export async function buildSnapshot(menuId: string, orgSlug?: string): Promise<M
         contains: (d.contains as string[]) ?? [], mayContain: (d.mayContain as string[]) ?? [], unknown: Boolean(d.unknown),
         diets: (d.diets as string[]) ?? [], kcal: num(d.kcal),
       };
-      return [{ kind: "item", dish }];
-    }),
-  }));
+      return [dish];
+  }
   const m = body.menu;
   return {
     menuId, name: ((m.display_name as string) || (m.name as string)), description: (m.description as string) ?? null,
@@ -626,7 +642,7 @@ export async function getSpecBookData(menuId: string) {
   const recipeRows = new Map(all.map((r) => [r.id as string, r]));
   const recipes = new Map(all.map((r) => [r.id as string, mapRecipe(r)]));
   // Menu dishes may be archived later; fetch any that weren't in the active list.
-  const missing = menu.rows.flatMap((s) => s.children ?? []).map((c) => c.recipeId).filter((id): id is string => !!id && !recipes.has(id));
+  const missing = itemRows(menu.rows).map((c) => c.recipeId).filter((id): id is string => !!id && !recipes.has(id));
   if (missing.length) for (const r of await fetchRecipeRows({ ids: missing })) { recipeRows.set(r.id as string, r); recipes.set(r.id as string, mapRecipe(r)); }
   const products = new Map(productsList.map((p) => [p.id, p]));
   const batchesFor = (r: Recipe, seen = new Set<string>()): Recipe[] => {
@@ -640,15 +656,10 @@ export async function getSpecBookData(menuId: string) {
     }
     return out;
   };
-  const sections = menu.rows.map((sec) => ({
-    title: sec.title ?? "",
-    dishes: (sec.children ?? [])
-      .filter((row) => row.kind === "item" && row.recipeId && recipes.has(row.recipeId))
-      .map((row) => {
-        const r = recipes.get(row.recipeId!)!;
-        return { recipe: r, displayName: row.title || r.name, rollup: mapRollup(recipeRows.get(r.id)!), batches: batchesFor(r) };
-      }),
-  }));
+  const sections = specSections(menu.rows, (row, group) => {
+    const r = row.recipeId ? recipes.get(row.recipeId) : undefined;
+    return r ? { recipe: r, displayName: row.title || r.name, group, rollup: mapRollup(recipeRows.get(r.id)!), batches: batchesFor(r) } : null;
+  });
   return { org, menu, sections, products, recipes, suppliers: new Map(suppliersList.map((s) => [s.id, s])), allergens, diets };
 }
 

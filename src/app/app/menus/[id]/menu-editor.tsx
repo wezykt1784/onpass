@@ -2,11 +2,12 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import * as Tabs from "@radix-ui/react-tabs";
-import { ArrowDown, ArrowUp, BookOpen, Copy, Eye, GripVertical, Info, Plus, Trash2, Utensils } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Copy, Eye, GripVertical, Info, ListChecks, Plus, Trash2, Utensils } from "lucide-react";
 import { copyMenuAction, saveMenuDetailsAction, saveMenuRowsAction, setMenuBrandsAction } from "@/lib/actions";
 import { allergenNames, money } from "@/lib/format";
 import type { Allergen, Menu, MenuRow } from "@/lib/types";
 import { Combobox } from "@/components/combobox";
+import { MAX_MENU_DISHES, itemRows } from "@/lib/menu-rows";
 import { AllergenChip, Button, ButtonLink, Card, Field, Notice, inputClass } from "@/components/ui";
 
 interface DishOpt { id: string; name: string; code: string | null; pricePence: number | null; unknown: boolean; contains: string[] }
@@ -125,8 +126,10 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const [drag, setDrag] = useState<{ s: number; c: number | null } | null>(null);
+  const [added, setAdded] = useState<string | null>(null); // a new group's name box gets the focus
   const byId = new Map(dishes.map((d) => [d.id, d]));
-  const count = rows.reduce((n, s) => n + (s.children ?? []).filter((c) => c.kind === "item").length, 0);
+  const count = itemRows(rows).length; // options count towards the limit too
+  const dishOptions = dishes.map((x) => ({ id: x.id, label: x.name, hint: x.code ?? undefined, warn: x.unknown ? "Allergens missing" : undefined }));
 
   useEffect(() => {
     if (!dirty) return;
@@ -146,7 +149,7 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-text-muted">{count} of 250 dishes. Drag rows to reorder, or use the arrows.</p>
+        <p className="text-sm text-text-muted">{count} of {MAX_MENU_DISHES} dishes. Drag rows to reorder, or use the arrows.</p>
         <div className="flex items-center gap-3">
           {msg && <span role={msg.ok ? "status" : "alert"} className={`text-sm ${msg.ok ? "text-text-muted" : "text-danger"}`}>{msg.text}</span>}
           {!msg && dirty && <span className="text-sm text-text-muted">Unsaved changes</span>}
@@ -196,9 +199,12 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
                     });
                     setDrag(null);
                   }}
-                  className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-border p-2 sm:flex-nowrap ${row.kind === "info" ? "italic text-text-muted" : ""} ${isDrop ? "shadow-[0_-3px_0_var(--color-focus)]" : ""}`}>
+                  className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border p-2 ${row.kind === "byo" ? "border-dashed border-border-input bg-surface" : "border-border sm:flex-nowrap"} ${row.kind === "info" ? "italic text-text-muted" : ""} ${isDrop ? "shadow-[0_-3px_0_var(--color-focus)]" : ""}`}>
                   <GripVertical aria-hidden className="size-5 shrink-0 cursor-grab text-text-muted" />
-                  {row.kind === "info" ? (
+                  {row.kind === "byo" ? (
+                    <ByoGroup row={row} byId={byId} allergens={allergens} dishOptions={dishOptions} autoFocus={added === row.id} full={count >= MAX_MENU_DISHES}
+                      edit={(fn) => update((r) => { fn(r[si].children![ci]); return r; })} />
+                  ) : row.kind === "info" ? (
                     <>
                       <Info aria-hidden className="size-4 shrink-0" />
                       <label htmlFor={`info-${row.id}`} className="sr-only">Message</label>
@@ -216,17 +222,21 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
                     </div>
                   )}
                   {row.kind === "item" && <span className="tabular text-sm">{money(row.pricePence ?? d?.pricePence)}</span>}
-                  <div className="flex">
+                  <div className={`flex ${row.kind === "byo" ? "self-start" : ""}`}>
                     <Button variant="ghost" size="sm" aria-label="Move up" disabled={ci === 0} onClick={() => update((r) => { move(r[si].children!, ci, ci - 1); return r; })}><ArrowUp aria-hidden /></Button>
                     <Button variant="ghost" size="sm" aria-label="Move down" disabled={ci === (sec.children?.length ?? 0) - 1} onClick={() => update((r) => { move(r[si].children!, ci, ci + 1); return r; })}><ArrowDown aria-hidden /></Button>
-                    <Button variant="ghost" size="sm" aria-label="Remove" onClick={() => update((r) => { r[si].children!.splice(ci, 1); return r; })}><Trash2 aria-hidden /></Button>
+                    <Button variant="ghost" size="sm" aria-label={row.kind === "byo" ? `Remove group ${row.title ?? ""}`.trim() : "Remove"} onClick={() => {
+                      const n = row.kind === "byo" ? (row.children ?? []).length : 0;
+                      if (n && !confirm(`Remove "${row.title || "this group"}" and its ${n} options?`)) return;
+                      update((r) => { r[si].children!.splice(ci, 1); return r; });
+                    }}><Trash2 aria-hidden /></Button>
                   </div>
                 </li>
               );
             })}
-            <li className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <li className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
               <Combobox label={`Add a dish to ${sec.title || "this section"}`} value={null} placeholder="Type a dish name to add it"
-                options={dishes.map((x) => ({ id: x.id, label: x.name, hint: x.code ?? undefined, warn: x.unknown ? "Allergens missing" : undefined }))}
+                options={dishOptions}
                 onChange={(rid) => update((r) => {
                   r[si].children = [...(r[si].children ?? []), { id: newId(), kind: "item", recipeId: rid, title: null, description: null, pricePence: null }];
                   return r;
@@ -235,6 +245,14 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
                 r[si].children = [...(r[si].children ?? []), { id: newId(), kind: "info", recipeId: null, title: "", description: null, pricePence: null }];
                 return r;
               })}><Info aria-hidden />Add message</Button>
+              <Button variant="ghost" onClick={() => {
+                const gid = newId();
+                setAdded(gid);
+                update((r) => {
+                  r[si].children = [...(r[si].children ?? []), { id: gid, kind: "byo", recipeId: null, title: "", description: null, pricePence: null, children: [] }];
+                  return r;
+                });
+              }}><ListChecks aria-hidden />Add build-your-own</Button>
             </li>
           </ol>
         </section>
@@ -242,7 +260,63 @@ function ContentBuilder({ menu, dishes, allergens }: { menu: Menu; dishes: DishO
       <Button variant="secondary" className="justify-self-start" onClick={() => update((r) => [...r, { id: newId(), kind: "section", title: "", description: null, recipeId: null, pricePence: null, children: [] }])}>
         <Plus aria-hidden />Add section
       </Button>
-      {count >= 250 && <Notice tone="warning">This menu has reached 250 dishes, the most a menu can hold.</Notice>}
+      {count >= MAX_MENU_DISHES && <Notice tone="warning">This menu has reached {MAX_MENU_DISHES} dishes, the most a menu can hold.</Notice>}
+    </div>
+  );
+}
+
+/** A build-your-own group: a name, a line telling guests what to choose, and the dishes they choose from. */
+function ByoGroup({ row, byId, allergens, dishOptions, autoFocus, full, edit }: {
+  row: MenuRow; byId: Map<string, DishOpt>; allergens: Allergen[]; autoFocus: boolean; full: boolean;
+  dishOptions: { id: string; label: string; hint?: string; warn?: string }[];
+  edit: (fn: (group: MenuRow) => void) => void;
+}) {
+  const opts = row.children ?? [];
+  const name = row.title?.trim() || "this group";
+  const move = (from: number, to: number) => edit((g) => { const [x] = g.children!.splice(from, 1); g.children!.splice(to, 0, x); });
+  return (
+    <div role="group" aria-label={`Build your own: ${name}`} className="grid min-w-0 flex-1 gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <ListChecks aria-hidden className="size-5 shrink-0 text-text-muted" />
+        <label htmlFor={`byo-${row.id}`} className="sr-only">Group name</label>
+        <input id={`byo-${row.id}`} autoFocus={autoFocus} className={`${inputClass} min-w-0 flex-1 font-semibold`} value={row.title ?? ""} maxLength={120}
+          placeholder="Group name, e.g. Build your burger" onChange={(e) => edit((g) => { g.title = e.target.value; })} />
+      </div>
+      <label htmlFor={`byo-d-${row.id}`} className="sr-only">What guests choose</label>
+      <input id={`byo-d-${row.id}`} className={`${inputClass} min-w-0`} value={row.description ?? ""} maxLength={300}
+        placeholder="What guests choose, e.g. Pick a bun, a patty and two toppings" onChange={(e) => edit((g) => { g.description = e.target.value || null; })} />
+      {opts.length === 0 ? (
+        <p className="rounded-md bg-bg px-3 py-2 text-sm text-text-muted">No options yet. Add the dishes guests choose from.</p>
+      ) : (
+        <ol aria-label={`Options in ${name}`} className="grid gap-1.5">
+          {opts.map((o, oi) => {
+            const d = o.recipeId ? byId.get(o.recipeId) : undefined;
+            return (
+              <li key={o.id} className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border border-border bg-bg p-2 sm:flex-nowrap">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/app/recipes/${o.recipeId}`} className="font-semibold hover:underline">{d?.name ?? "Missing dish"}</Link>
+                    <span className="font-mono text-xs text-text-muted">{d?.code}</span>
+                    {d?.unknown && <AllergenChip size="sm" level="unknown" name="Allergen data missing" />}
+                  </div>
+                  <p className="truncate text-xs text-text-muted">{d ? allergenNames(d.contains, allergens).join(", ") || "No listed allergens" : ""}</p>
+                </div>
+                <span className="tabular text-sm">{money(o.pricePence ?? d?.pricePence)}</span>
+                <div className="flex">
+                  <Button variant="ghost" size="sm" aria-label={`Move ${d?.name ?? "option"} up`} disabled={oi === 0} onClick={() => move(oi, oi - 1)}><ArrowUp aria-hidden /></Button>
+                  <Button variant="ghost" size="sm" aria-label={`Move ${d?.name ?? "option"} down`} disabled={oi === opts.length - 1} onClick={() => move(oi, oi + 1)}><ArrowDown aria-hidden /></Button>
+                  <Button variant="ghost" size="sm" aria-label={`Remove ${d?.name ?? "option"} from ${name}`} onClick={() => edit((g) => { g.children!.splice(oi, 1); })}><Trash2 aria-hidden /></Button>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {!full && (
+        <Combobox label={`Add an option to ${name}`} value={null} placeholder="Type a dish name to add it as an option"
+          options={dishOptions.filter((x) => !opts.some((o) => o.recipeId === x.id))}
+          onChange={(rid) => edit((g) => { g.children = [...(g.children ?? []), { id: newId(), kind: "item", recipeId: rid, title: null, description: null, pricePence: null }]; })} />
+      )}
     </div>
   );
 }

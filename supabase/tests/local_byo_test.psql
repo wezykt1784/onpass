@@ -1,0 +1,43 @@
+-- Run on a scratch database: stub, every migration, then this file. Signed in as a chef of group A.
+\set ON_ERROR_STOP 0
+set search_path = spec, public;
+insert into auth.users values ('00000000-0000-0000-0000-00000000000a','chef@a.test'),('00000000-0000-0000-0000-00000000000c','chef@b.test');
+select bootstrap_org('Pub A','pub-a','chef@a.test') as org_a \gset
+select bootstrap_org('Pub B','pub-b','chef@b.test') as org_b \gset
+insert into recipes (org_id,kind,name) values (:'org_a','dish','Beef patty') returning id as patty \gset
+insert into recipes (org_id,kind,name) values (:'org_a','dish','Brioche bun') returning id as bun \gset
+insert into recipes (org_id,kind,name) values (:'org_a','dish','Fries') returning id as fries \gset
+insert into recipes (org_id,kind,name) values (:'org_b','dish','B secret dish') returning id as other \gset
+insert into menus (org_id,name) values (:'org_a','Burgers') returning id as m1 \gset
+grant usage on schema extensions to authenticated;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+\echo == save: plain dish, info, group with 2 options
+select save_menu_rows(:'m1', jsonb_build_array(jsonb_build_object('title','Mains','children',jsonb_build_array(
+  jsonb_build_object('kind','item','recipeId',:'fries'),
+  jsonb_build_object('kind','info','title','Burgers come with fries'),
+  jsonb_build_object('kind','byo','title','Build your burger','description','Pick a bun and a patty','children',jsonb_build_array(
+    jsonb_build_object('kind','item','recipeId',:'bun'), jsonb_build_object('kind','item','recipeId',:'patty')))))));
+select r.kind, r.title, r.sort, p.kind as parent_kind, x.name from menu_rows r left join menu_rows p on p.id = r.parent_row_id left join recipes x on x.id = r.recipe_id
+  where r.menu_id = :'m1' order by r.parent_row_id nulls first, p.sort, r.sort;
+\echo == public_menu sees the options as dishes (expect 3)
+reset role;
+select jsonb_array_length(public_menu('pub-a', :'m1')->'dishes') as dishes;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+\echo == refused: group without a name
+select save_menu_rows(:'m1', jsonb_build_array(jsonb_build_object('title','Mains','children',jsonb_build_array(jsonb_build_object('kind','byo','title',' ','children',jsonb_build_array(jsonb_build_object('kind','item','recipeId',:'bun')))))));
+\echo == refused: group with no options
+select save_menu_rows(:'m1', jsonb_build_array(jsonb_build_object('title','Mains','children',jsonb_build_array(jsonb_build_object('kind','byo','title','Sauces','children','[]'::jsonb)))));
+\echo == refused: a recipe from group B as a dish, and as an option
+select save_menu_rows(:'m1', jsonb_build_array(jsonb_build_object('title','Mains','children',jsonb_build_array(jsonb_build_object('kind','item','recipeId',:'other')))));
+select save_menu_rows(:'m1', jsonb_build_array(jsonb_build_object('title','Mains','children',jsonb_build_array(jsonb_build_object('kind','byo','title','Sauces','children',jsonb_build_array(jsonb_build_object('kind','item','recipeId',:'other')))))));
+\echo == refused: an info row inside a group
+select save_menu_rows(:'m1', jsonb_build_array(jsonb_build_object('title','Mains','children',jsonb_build_array(jsonb_build_object('kind','byo','title','Sauces','children',jsonb_build_array(jsonb_build_object('kind','info','title','x')))))));
+\echo == after the refusals the first save is untouched (expect 6 rows)
+select count(*) as rows_kept from menu_rows where menu_id = :'m1';
+\echo == the chef of group B cannot save this menu
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select save_menu_rows(:'m1', '[]'::jsonb);
+reset role;
+select count(*) as rows_still_kept from menu_rows where menu_id = :'m1';

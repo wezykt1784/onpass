@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import { effectiveLive, guestVersion, missingInfo, slugify } from "../publishing";
 import { save, store } from "./store";
+import { itemRows, rowsProblem, specSections } from "@/lib/menu-rows";
 
 export class DataError extends Error {}
 
@@ -279,7 +280,7 @@ export async function setRecipePhoto(recipeId: string, photoPath: string | null)
 // ---------- menus ----------
 
 function menuRecipeIds(m: Menu): string[] {
-  return m.rows.flatMap((s) => [s, ...(s.children ?? [])]).filter((r) => r.kind === "item" && r.recipeId).map((r) => r.recipeId!);
+  return itemRows(m.rows).filter((r) => r.recipeId).map((r) => r.recipeId!);
 }
 
 export async function listMenus(q?: string) {
@@ -330,19 +331,16 @@ export async function saveMenuRows(menuId: string, rows: MenuRow[]) {
   const s = store();
   const m = s.menus.find((x) => x.id === menuId);
   if (!m) throw new DataError("That menu no longer exists.");
-  const items = rows.flatMap((r) => r.children ?? []).filter((r) => r.kind === "item");
-  if (items.length > 250) throw new DataError("A menu can hold at most 250 dishes.");
   const ids = new Set(s.recipes.map((r) => r.id));
-  for (const sec of rows) {
-    if (sec.kind !== "section") throw new DataError("Dishes must sit inside a section.");
-    if (!sec.title?.trim()) throw new DataError("Every section needs a name.");
-  }
-  for (const it of items) if (!it.recipeId || !ids.has(it.recipeId)) throw new DataError("A dish on this menu no longer exists.");
-  m.rows = rows.map((sec) => ({
-    ...sec,
-    id: sec.id || id("mr"),
-    children: (sec.children ?? []).map((c) => ({ ...c, id: c.id || id("mr") })),
-  }));
+  const problem = rowsProblem(rows, (rid) => ids.has(rid));
+  if (problem) throw new DataError(problem);
+  const withIds = (r: MenuRow): MenuRow => ({
+    ...r,
+    id: r.id || id("mr"),
+    title: r.kind === "byo" ? r.title!.trim() : r.title,
+    ...(r.kind === "section" || r.kind === "byo" ? { children: (r.children ?? []).map(withIds) } : { children: undefined }),
+  });
+  m.rows = rows.map(withIds);
   m.updatedAt = nowIso();
   save();
   return m;
@@ -385,6 +383,14 @@ function snapshotOf(menuId: string): MenuSnapshot | null {
     description: sec.description,
     rows: (sec.children ?? []).flatMap((row): SnapshotSection["rows"] => {
       if (row.kind === "info") return [{ kind: "info" as const, text: row.title ?? "" }];
+      if (row.kind === "byo") {
+        const options = (row.children ?? []).flatMap(dishOf);
+        return options.length ? [{ kind: "byo" as const, title: row.title ?? "", text: row.description, options }] : [];
+      }
+      return dishOf(row).map((dish) => ({ kind: "item" as const, dish }));
+    }),
+  }));
+  function dishOf(row: MenuRow): SnapshotDish[] {
       const r = row.recipeId ? recipes.get(row.recipeId) : undefined;
       if (!r) return [];
       const ru = computeRollup(r.id, recipes, products);
@@ -402,9 +408,8 @@ function snapshotOf(menuId: string): MenuSnapshot | null {
         diets: ru.diets,
         kcal: ru.nutritionComplete && ru.nutritionPerPortion.kcal != null ? Math.round(ru.nutritionPerPortion.kcal) : null,
       };
-      return [{ kind: "item" as const, dish }];
-    }),
-  }));
+      return [dish];
+  }
   return {
     menuId: m.id,
     name: m.displayName || m.name,
@@ -437,15 +442,10 @@ export async function getSpecBookData(menuId: string) {
     }
     return out;
   };
-  const sections = m.rows.map((sec) => ({
-    title: sec.title ?? "",
-    dishes: (sec.children ?? [])
-      .filter((row) => row.kind === "item" && row.recipeId && recipes.has(row.recipeId))
-      .map((row) => {
-        const r = recipes.get(row.recipeId!)!;
-        return { recipe: r, displayName: row.title || r.name, rollup: computeRollup(r.id, recipes, products), batches: batchesFor(r) };
-      }),
-  }));
+  const sections = specSections(m.rows, (row, group) => {
+    const r = row.recipeId ? recipes.get(row.recipeId) : undefined;
+    return r ? { recipe: r, displayName: row.title || r.name, group, rollup: computeRollup(r.id, recipes, products), batches: batchesFor(r) } : null;
+  });
   return {
     org: s.org,
     menu: m,

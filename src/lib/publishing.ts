@@ -1,5 +1,6 @@
 // Publishing rules shared by both data layers. Pure functions, no I/O.
 import type { GuestSettings, MenuSnapshot, Publication } from "./types";
+import { snapshotDishes } from "./menu-rows";
 
 /** A staging row whose go-live time has passed counts as live. Latest wins per menu. */
 export function effectiveLive(pubs: Publication[], now = new Date()): Publication[] {
@@ -26,7 +27,7 @@ export interface MissingInfo {
 }
 
 export function missingInfo(s: MenuSnapshot, guest: GuestSettings): MissingInfo {
-  const dishes = s.sections.flatMap((x) => x.rows.flatMap((r) => (r.kind === "item" ? [r.dish] : [])));
+  const dishes = snapshotDishes(s); // build-your-own options count as dishes: guests eat them too
   const blocking: string[] = [];
   const warnings: string[] = [];
   if (!dishes.length) blocking.push("The menu has no dishes.");

@@ -98,7 +98,8 @@ export interface Rollup {
   costPerPortionPence: number | null;
 }
 
-export type MenuRowKind = "section" | "info" | "item";
+// byo = a build-your-own group inside a section: guests pick from its options, each option a recipe (item row).
+export type MenuRowKind = "section" | "info" | "item" | "byo";
 
 export interface MenuRow {
   id: string;
@@ -107,7 +108,7 @@ export interface MenuRow {
   description: string | null;
   recipeId: string | null;
   pricePence: number | null;
-  children?: MenuRow[];
+  children?: MenuRow[]; // sections hold items, info rows and byo groups; byo groups hold items
 }
 
 export interface Menu {
@@ -148,10 +149,15 @@ export interface SnapshotDish {
   kcal: number | null;
 }
 
+export type SnapshotRow =
+  | { kind: "item"; dish: SnapshotDish }
+  | { kind: "info"; text: string }
+  | { kind: "byo"; title: string; text: string | null; options: SnapshotDish[] };
+
 export interface SnapshotSection {
   title: string;
   description: string | null;
-  rows: ({ kind: "item"; dish: SnapshotDish } | { kind: "info"; text: string })[];
+  rows: SnapshotRow[];
 }
 
 export interface MenuSnapshot {

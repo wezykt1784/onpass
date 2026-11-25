@@ -6,6 +6,7 @@ import { allergenNames, dietNames, money, topLevelAllergens } from "@/lib/format
 import type { Allergen, Diet, MenuSnapshot, Organisation, SnapshotDish } from "@/lib/types";
 import { AllergenBars, AllergenChip, Button, DietBadge } from "@/components/ui";
 import { photoUrl } from "@/lib/supabase/env";
+import { sectionDishes, snapshotDishes } from "@/lib/menu-rows";
 
 export function GuestMenu({ org, menus, allergens, diets, venue, note, logo, showKcal = true }: {
   org: Organisation; menus: MenuSnapshot[]; allergens: Allergen[]; diets: Diet[]; venue?: string; note?: string | null; logo?: { src: string; alt: string } | null; showKcal?: boolean;
@@ -32,8 +33,20 @@ export function GuestMenu({ org, menus, allergens, diets, venue, note, logo, sho
     return want.every((w) => d.diets.includes(w));
   }, [avoid, want, strict, allergens, filtering]);
 
-  const all = snap.sections.flatMap((s) => s.rows.filter((r) => r.kind === "item"));
-  const shown = all.filter((r) => r.kind === "item" && fits(r.dish)).length;
+  const all = snapshotDishes(snap);
+  const shown = all.filter(fits).length;
+
+  const dishButton = (d: SnapshotDish, option = false) => (
+    <button className={`block w-full text-left hover:bg-surface-sunken ${option ? "py-3 pl-8 pr-4" : "px-4 py-4"}`} aria-haspopup="dialog" onClick={() => { remember(); setDetail(d); }}>
+      <span className={`flex justify-between gap-3 ${option ? "font-semibold" : "font-bold"}`}><span>{d.name}</span><span className="tabular">{money(d.pricePence)}</span></span>
+      {(d.description || (showKcal && d.kcal != null)) && <span className="mt-1 block text-sm text-text-muted">{d.description}{showKcal && d.kcal != null ? ` · ${d.kcal} kcal` : ""}</span>}
+      <span className="mt-2 flex flex-wrap gap-1.5">
+        {d.diets.map((x) => { const y = diets.find((z) => z.id === x); return y ? <DietBadge key={x} short={y.short} name={y.name} /> : null; })}
+        {d.unknown ? <AllergenChip size="sm" level="unknown" name="Ask us about allergens" /> :
+          allergenNames(d.contains, allergens).map((n) => <AllergenChip key={n} size="sm" name={n.replace(/ \(.+\)/, "")} />)}
+      </span>
+    </button>
+  );
   const summary = [
     ...avoid.map((a) => `No ${top.find((t) => t.id === a)?.name.toLowerCase()}`),
     ...want.map((w) => diets.find((d) => d.id === w)?.name ?? ""),
@@ -79,8 +92,8 @@ export function GuestMenu({ org, menus, allergens, diets, venue, note, logo, sho
         <p className="px-4 pt-4 text-xs text-text-muted">{org.disclaimer}</p>
 
         {snap.sections.map((sec) => {
-          const rows = sec.rows.filter((r) => r.kind === "info" || fits(r.dish));
-          const dishCount = rows.filter((r) => r.kind === "item").length;
+          const rows = sec.rows.filter((r) => r.kind !== "item" || fits(r.dish));
+          const dishCount = sectionDishes(sec).filter(fits).length;
           return (
             <section key={sec.title} aria-labelledby={`s-${sec.title}`} className="pt-6">
               <h2 id={`s-${sec.title}`} className="px-4 pb-2 text-lg">{sec.title}</h2>
@@ -88,21 +101,32 @@ export function GuestMenu({ org, menus, allergens, diets, venue, note, logo, sho
                 <p className="mx-4 rounded-md bg-surface px-4 py-3 text-sm text-text-muted">Nothing in {sec.title} fits your filters. Please ask the team, they may be able to help.</p>
               ) : (
                 <ul>
-                  {rows.map((r, i) => r.kind === "info" ? (
-                    <li key={i} className="mx-4 my-2 rounded-md bg-surface px-3 py-2 text-sm italic">{r.text}</li>
-                  ) : (
-                    <li key={r.dish.recipeId} className="border-t border-border">
-                      <button className="block w-full px-4 py-4 text-left hover:bg-surface-sunken" aria-haspopup="dialog" onClick={() => { remember(); setDetail(r.dish); }}>
-                        <span className="flex justify-between gap-3 font-bold"><span>{r.dish.name}</span><span className="tabular">{money(r.dish.pricePence)}</span></span>
-                        {(r.dish.description || (showKcal && r.dish.kcal != null)) && <span className="mt-1 block text-sm text-text-muted">{r.dish.description}{showKcal && r.dish.kcal != null ? ` · ${r.dish.kcal} kcal` : ""}</span>}
-                        <span className="mt-2 flex flex-wrap gap-1.5">
-                          {r.dish.diets.map((d) => { const x = diets.find((y) => y.id === d); return x ? <DietBadge key={d} short={x.short} name={x.name} /> : null; })}
-                          {r.dish.unknown ? <AllergenChip size="sm" level="unknown" name="Ask us about allergens" /> :
-                            allergenNames(r.dish.contains, allergens).map((n) => <AllergenChip key={n} size="sm" name={n.replace(/ \(.+\)/, "")} />)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                  {rows.map((r, i) => {
+                    if (r.kind === "info") return <li key={i} className="mx-4 my-2 rounded-md bg-surface px-3 py-2 text-sm italic">{r.text}</li>;
+                    if (r.kind === "item") return <li key={r.dish.recipeId} className="border-t border-border">{dishButton(r.dish)}</li>;
+                    const ok = r.options.filter(fits);
+                    const gid = `g-${sec.title}-${i}`;
+                    return (
+                      <li key={gid} className="border-t border-border">
+                        <div role="group" aria-labelledby={gid}>
+                          <div className="px-4 pt-4">
+                            <h3 id={gid} className="text-base font-bold">{r.title}</h3>
+                            {r.text && <p className="mt-0.5 text-sm text-text-muted">{r.text}</p>}
+                          </div>
+                          {ok.length === 0 ? (
+                            <p className="mx-4 my-3 rounded-md bg-surface px-3 py-2 text-sm text-text-muted">None of these options fit your filters. Please ask the team.</p>
+                          ) : (
+                            <ul className="pb-1">
+                              {ok.map((d) => <li key={d.recipeId}>{dishButton(d, true)}</li>)}
+                            </ul>
+                          )}
+                          {ok.length > 0 && ok.length < r.options.length && (
+                            <p className="px-8 pb-3 text-xs text-text-muted">{r.options.length - ok.length} more {r.options.length - ok.length === 1 ? "option is" : "options are"} hidden by your filters.</p>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </section>
@@ -151,7 +175,7 @@ export function GuestMenu({ org, menus, allergens, diets, venue, note, logo, sho
             </label>
             <div className="flex gap-2">
               <Button variant="ghost" size="lg" onClick={() => { setAvoid([]); setWant([]); setStrict(false); }}>Clear all</Button>
-              <Dialog.Close asChild><Button size="lg" className="flex-1">Show {all.filter((r) => r.kind === "item" && fits(r.dish)).length} dishes</Button></Dialog.Close>
+              <Dialog.Close asChild><Button size="lg" className="flex-1">Show {all.filter(fits).length} dishes</Button></Dialog.Close>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
