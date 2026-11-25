@@ -10,6 +10,7 @@ import { useSupabase } from "./supabase/env";
 import { rateLimit } from "./rate-limit";
 import type { Brand, MenuRow, Product, Recipe, RecipeLine, Site, User } from "./types";
 import { UPLOAD_CHUNK, matchKey, type UploadField, type UploadRow } from "./product-upload";
+import { catalogueKey, type PlanBatch, type PlanDish, type PlanLine, type Target } from "./recipe-import";
 
 export type ActionResult<T = unknown> = { ok: true; value?: T } | { ok: false; error: string };
 
@@ -189,6 +190,94 @@ export async function uploadProductsAction(rows: UploadRow[], present: UploadFie
       } catch (e) {
         if (!data.isDataError(e)) console.error(e);
         out.failed.push({ line: r.line, name: r.name, error: data.isDataError(e) ? e.message : "Couldn't be saved." });
+      }
+    }
+    return out;
+  });
+}
+
+// ---------- recipe import (old spec book / recipe card files) ----------
+
+export type ImportDishResult = { dishId: string; batchIds: Record<string, string>; created: number; updated: number; newProducts: number; photo: boolean };
+
+/**
+ * Saves one dish from the import plan, with any batch recipes it needs that weren't saved by an earlier dish.
+ * A recipe with the same kind and name is updated rather than added again, so running the import twice is safe.
+ * Everything is saved as a draft. New products have allergens not confirmed.
+ */
+export async function importDishAction(dish: PlanDish, batches: PlanBatch[], knownBatchIds: Record<string, string>, withPhoto: boolean): Promise<ActionResult<ImportDishResult>> {
+  if (!dish?.name || batches.length > 30 || dish.lines.length > 80) return { ok: false, error: "That dish is too big to import in one go." };
+  return run(async () => {
+    const [products, suppliers, listed] = await Promise.all([data.listProducts(), data.listSuppliers(), data.listRecipes({})]);
+    const existing = listed.map((x) => x.recipe);
+    const supName = new Map(suppliers.map((s) => [s.id, s.name]));
+    const productIds = new Map(products.map((p) => [catalogueKey(p.supplierId ? supName.get(p.supplierId) ?? null : null, p.name), p.id]));
+    const byName = new Map(products.map((p) => [p.name.trim().toLowerCase(), p.id]));
+    const out: ImportDishResult = { dishId: "", batchIds: { ...knownBatchIds }, created: 0, updated: 0, newProducts: 0, photo: false };
+
+    const productFor = async (t: Target): Promise<string> => {
+      if (t.type === "product") {
+        const id = productIds.get(t.key);
+        if (id) return id;
+        // The price list wasn't imported (or the product was renamed): fall back to a product with that name.
+        const [, name] = t.key.split("\u0000");
+        return productFor({ type: "new", name: name.replace(/\b\w/g, (c) => c.toUpperCase()), baseUnit: "g" });
+      }
+      if (t.type !== "new") throw new data.DataError("Unexpected line.");
+      const hit = byName.get(t.name.trim().toLowerCase());
+      if (hit) return hit;
+      const p = await data.upsertProduct({
+        name: t.name, supplierId: null, supplierCode: null, baseUnit: t.baseUnit, eachWeightG: null, densityGPerMl: null, packSize: null, packCostPence: null,
+        allergenStatus: "unknown", allergens: [], dietIds: [], nutritionPer100: {},
+      });
+      byName.set(t.name.trim().toLowerCase(), p.id);
+      out.newProducts++;
+      return p.id;
+    };
+    const linesFor = async (lines: PlanLine[]) => {
+      const res: { productId: string | null; subRecipeId: string | null; quantity: number; unit: PlanLine["unit"] }[] = [];
+      for (const l of lines) {
+        if (!l.target) continue;
+        if (l.target.type === "batch") {
+          const id = out.batchIds[l.target.key];
+          if (!id) throw new data.DataError(`A component of ${dish.name} wasn't saved.`);
+          res.push({ productId: null, subRecipeId: id, quantity: l.quantity, unit: l.unit });
+        } else {
+          res.push({ productId: await productFor(l.target), subRecipeId: null, quantity: l.quantity, unit: l.unit });
+        }
+      }
+      return res;
+    };
+    const save = async (kind: "dish" | "batch", name: string, details: Parameters<typeof data.saveRecipe>[2]["details"], lines: PlanLine[], overrides: PlanDish["overrides"]) => {
+      let r = existing.find((x) => x.kind === kind && x.name.trim().toLowerCase() === name.trim().toLowerCase() && x.status !== "archived");
+      if (r) out.updated++;
+      else { r = await data.createRecipe({ kind, name }); existing.push(r); out.created++; }
+      await data.saveRecipe(r.id, r.updatedAt, { details, lines: await linesFor(lines), overrides });
+      return r.id;
+    };
+
+    for (const b of batches) {
+      if (out.batchIds[b.key]) continue;
+      out.batchIds[b.key] = await save("batch", b.name, {
+        name: b.name, code: null, description: null, yieldQty: b.yieldQty, yieldUnit: b.yieldUnit, portions: 1,
+        method: b.method, skillRating: null, timeRating: null, status: "draft", pricePence: null,
+      }, b.lines, []);
+    }
+    out.dishId = await save("dish", dish.name, {
+      name: dish.name, code: null, description: dish.description, yieldQty: null, yieldUnit: null, portions: 1,
+      method: dish.method, skillRating: null, timeRating: null, status: "draft", pricePence: dish.pricePence,
+    }, dish.lines, dish.overrides);
+
+    if (withPhoto && dish.photo) {
+      const r = await data.getRecipe(out.dishId);
+      const url = r && !r.photoPath ? await data.oldSpecBookPhoto(dish.photo) : null;
+      const m = url?.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+      if (m) {
+        const bytes = Buffer.from(m[2], "base64");
+        if (bytes.length <= MAX_PHOTO) {
+          await data.uploadRecipePhoto(out.dishId, new File([bytes], `${dish.oldId}.${m[1].split("/")[1]}`, { type: m[1] }));
+          out.photo = true;
+        }
       }
     }
     return out;

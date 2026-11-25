@@ -6,6 +6,7 @@ import { connection } from "next/server";
 import { z } from "zod";
 import { supabaseServer } from "../supabase/server";
 import { PHOTO_BUCKET } from "../supabase/env";
+import type { OldRecipe } from "../recipe-import";
 import type {
   Allergen, Brand, Diet, GuestSettings, Member, Menu, MenuRow, MenuSnapshot, Organisation, Product, Publication, Recipe, RecipeLine,
   Rollup, Site, SiteMenus, SnapshotDish, SnapshotSection, Supplier, User,
@@ -465,6 +466,27 @@ export async function setRecipePhoto(recipeId: string, photoPath: string | null)
   const { error } = await sb.from("recipes").update({ photo_path: photoPath }).eq("id", recipeId);
   if (error) fail(error);
   if (old?.photo_path && old.photo_path !== photoPath) await sb.storage.from(PHOTO_BUCKET).remove([old.photo_path as string]);
+}
+
+// ---------- old spec book (the earlier app, public schema in the same project) ----------
+
+/** The earlier spec book's recipes, read with your own login (its rules decide who can see them). Empty if you can't. */
+export async function listOldSpecBook(): Promise<OldRecipe[]> {
+  await connection();
+  const { sb } = await session();
+  const { data, error } = await sb.schema("public").from("recipes").select("id, book, data, deleted").order("book").order("id");
+  if (error || !data) return [];
+  return data.filter((r) => !r.deleted && r.data).map((r) => {
+    const d = (typeof r.data === "string" ? JSON.parse(r.data) : r.data) as Omit<OldRecipe, "id" | "book">;
+    return { ...d, id: r.id as string, book: r.book as string, name: String(d.name ?? r.id) };
+  });
+}
+
+/** A photo from the earlier spec book, as a data URL, or null. */
+export async function oldSpecBookPhoto(photoId: string): Promise<string | null> {
+  const { sb } = await session();
+  const { data } = await sb.schema("public").from("photos").select("data").eq("id", photoId).maybeSingle();
+  return (data?.data as string) ?? null;
 }
 
 // ---------- menus ----------

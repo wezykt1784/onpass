@@ -83,16 +83,22 @@ const ALLERGEN_ALIASES: Record<string, string> = {
 };
 const NONE = new Set(["", "none", "no", "n", "nil", "na", "n/a", "-", "0", "free from all", "nothing"]);
 
+/** One allergen from a word or name ("dairy", "Cereals containing gluten", "Wheat"), or null. */
+export function allergenFromText(text: string, allergens: Allergen[]): Allergen | null {
+  const k = squash(text);
+  if (!k) return null;
+  const byName = allergens.find((a) => squash(a.name) === k || squash(a.code) === k);
+  const code = byName?.code ?? ALLERGEN_ALIASES[k];
+  return (code && allergens.find((x) => x.code === code)) || null;
+}
+
 function readAllergens(text: string, level: AllergenLevel, allergens: Allergen[], problems: string[], label: string) {
   const out: { allergenId: string; level: AllergenLevel }[] = [];
   if (NONE.has(text.trim().toLowerCase())) return out;
   for (const raw of text.split(/[,;/|\n]+|\band\b/i)) {
     const t = raw.trim();
     if (NONE.has(t.toLowerCase())) continue;
-    const k = squash(t);
-    const byName = allergens.find((a) => squash(a.name) === k || squash(a.code) === k);
-    const code = byName?.code ?? ALLERGEN_ALIASES[k];
-    const a = code ? allergens.find((x) => x.code === code) : undefined;
+    const a = allergenFromText(t, allergens);
     if (!a) { problems.push(`${label}: "${t}" isn't an allergen we know. Use a name like Milk, Wheat or Mustard.`); continue; }
     if (!out.some((x) => x.allergenId === a.id)) out.push({ allergenId: a.id, level });
   }

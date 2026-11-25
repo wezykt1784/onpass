@@ -5,6 +5,7 @@ import "server-only";
 import { connection } from "next/server";
 import { cookies } from "next/headers";
 import { computeRollup, wouldLoop } from "../rollup";
+import type { OldRecipe } from "../recipe-import";
 import type {
   Brand, Member, Menu, MenuRow, MenuSnapshot, Product, Publication, Recipe, RecipeLine, Rollup, Site, SiteMenus, SnapshotDish,
   SnapshotSection, Supplier, User,
@@ -740,6 +741,37 @@ export async function previewPublication(pubId: string) {
   const fresh = snapshotOf(p.menuId);
   return { fresh, issues: fresh ? missingInfo(fresh, brand.guest) : { blocking: ["The menu no longer exists."], warnings: [] }, changedSince: !!fresh && JSON.stringify(fresh.sections) !== JSON.stringify(p.snapshot.sections) };
 }
+
+// ---------- old spec book ----------
+
+/** Demo stand-in for the earlier spec book: two invented dishes so the importer can be tried. */
+export async function listOldSpecBook(): Promise<OldRecipe[]> {
+  await connection();
+  return OLD_DEMO;
+}
+
+export async function oldSpecBookPhoto(_photoId: string): Promise<string | null> {
+  // A 1x1 grey JPEG is enough to exercise the photo step.
+  return "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
+}
+
+const OLD_DEMO: OldRecipe[] = [
+  {
+    id: "demo-old-1", book: "set", name: "Beetroot cured trout", description: "Horseradish cream, rye crumb", course: "starter", price: "£8.50", photo: "demo-old-1",
+    plate: ["60g beetroot cured trout", "20g horseradish cream", "5g rye crumb", "Dill"],
+    components: [
+      { name: "Beetroot cured trout", ingredients: ["1kg trout fillet", "200g raw beetroot", "100g sea salt", "100g caster sugar"], method: ["Blend the beetroot, salt and sugar.", "Cover the trout and cure for 24 hours."], yieldText: "900g" },
+      { name: "Horseradish cream", ingredients: ["200g creme fraiche", "40g grated horseradish", "Salt, pepper"], method: ["Fold together and season."] },
+      { name: "To serve", method: ["Slice the trout thinly and fan on the plate.", "Quenelle the cream and scatter the crumb."] },
+    ],
+    allergens: { contains: ["Fish", "Milk", "Cereals containing gluten"], may: ["Mustard"], status: "checked", source: "Zonal matrix", checkedBy: "Demo chef", checkedAt: "2026-11-05T12:00:00.000Z" },
+  },
+  {
+    id: "demo-old-2", book: "bar", name: "Whipped feta toast", description: "Honey and thyme", course: "canape",
+    plate: ["2pc sourdough toast", "30g whipped feta", "5ml honey"],
+    components: [{ name: "Whipped feta", ingredients: ["400g feta", "100g Greek yoghurt", "Lemon zest"], method: ["Blend until smooth."] }],
+  },
+];
 
 // ---------- members ----------
 

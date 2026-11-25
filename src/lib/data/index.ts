@@ -66,4 +66,6 @@ export const listMembers = impl.listMembers;
 export const inviteMember = impl.inviteMember;
 export const updateMember = impl.updateMember;
 export const deleteMember = impl.deleteMember;
+export const listOldSpecBook = impl.listOldSpecBook;
+export const oldSpecBookPhoto = impl.oldSpecBookPhoto;
 export const joinEarlyList = impl.joinEarlyList;
