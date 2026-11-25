@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Carrot, Plus, Search } from "lucide-react";
+import { Carrot, Plus, Search, Upload } from "lucide-react";
 import { listAllergens, listProducts, listSuppliers } from "@/lib/data";
 import { allergenNames, money } from "@/lib/format";
 import { AllergenChip, ButtonLink, EmptyState, PageHeader, inputClass } from "@/components/ui";
@@ -16,7 +16,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/app/pro
   const sup = new Map(suppliers.map((s) => [s.id, s.name]));
   return (
     <>
-      <PageHeader title="Products" sub="What you buy, with supplier codes, allergens and nutrition." actions={<ButtonLink href="/app/products/new"><Plus aria-hidden />New product</ButtonLink>} />
+      <PageHeader title="Products" sub="What you buy, with supplier codes, allergens and nutrition." actions={<div className="flex flex-wrap gap-2"><ButtonLink variant="secondary" href="/app/products/upload"><Upload aria-hidden />Upload products</ButtonLink><ButtonLink href="/app/products/new"><Plus aria-hidden />New product</ButtonLink></div>} />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <form role="search" className="relative w-full max-w-sm" action="/app/products">
           <label htmlFor="q" className="sr-only">Search products</label>

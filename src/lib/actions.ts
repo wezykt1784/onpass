@@ -9,6 +9,7 @@ import * as data from "./data";
 import { useSupabase } from "./supabase/env";
 import { rateLimit } from "./rate-limit";
 import type { Brand, MenuRow, Product, Recipe, RecipeLine, Site, User } from "./types";
+import { UPLOAD_CHUNK, matchKey, type UploadField, type UploadRow } from "./product-upload";
 
 export type ActionResult<T = unknown> = { ok: true; value?: T } | { ok: false; error: string };
 
@@ -123,6 +124,75 @@ export async function saveProductAction(input: Omit<Product, "id" | "updatedAt" 
 
 export async function addSupplierAction(name: string): Promise<ActionResult<{ id: string; name: string }>> {
   return run(() => data.upsertSupplier({ name }));
+}
+
+export type UploadOutcome = { added: number; updated: number; failed: { line: number; name: string; error: string }[] };
+
+/**
+ * Saves one batch of uploaded product rows (the browser sends the file in batches).
+ * A row matches an existing product by supplier and supplier code, or failing that supplier and name.
+ * Fields the file doesn't have keep their current value on existing products.
+ * Allergens from the file count as confirmed only when `confirmed` is true.
+ */
+export async function uploadProductsAction(rows: UploadRow[], present: UploadField[], confirmed: boolean): Promise<ActionResult<UploadOutcome>> {
+  if (!Array.isArray(rows) || rows.length > UPLOAD_CHUNK) return { ok: false, error: "Send the file in smaller batches." };
+  const has = new Set(present);
+  return run(async () => {
+    const [suppliers, products] = await Promise.all([data.listSuppliers(), data.listProducts()]);
+    const supplierIds = new Map(suppliers.map((s) => [s.name.toLowerCase(), s.id]));
+    const supplierName = new Map(suppliers.map((s) => [s.id, s.name]));
+    const byCode = new Map<string, Product>();
+    const byName = new Map<string, Product>();
+    for (const p of products) {
+      const sup = p.supplierId ? supplierName.get(p.supplierId) ?? null : null;
+      const c = matchKey.code(sup, p.supplierCode);
+      if (c) byCode.set(c, p);
+      byName.set(matchKey.name(sup, p.name), p);
+    }
+    const out: UploadOutcome = { added: 0, updated: 0, failed: [] };
+    for (const r of rows) {
+      try {
+        let supplierId: string | null = null;
+        if (r.supplier) {
+          supplierId = supplierIds.get(r.supplier.toLowerCase()) ?? null;
+          if (!supplierId) {
+            const s = await data.upsertSupplier({ name: r.supplier });
+            supplierId = s.id;
+            supplierIds.set(r.supplier.toLowerCase(), s.id);
+            supplierName.set(s.id, s.name);
+          }
+        }
+        const existing = (r.code && byCode.get(matchKey.code(r.supplier, r.code)!)) || byName.get(matchKey.name(r.supplier, r.name));
+        const keep = <T,>(field: UploadField[], fromFile: T, current: T | undefined, fallback: T) =>
+          field.some((f) => has.has(f)) ? fromFile : existing ? (current as T) : fallback;
+        const allergensFromFile = r.allergens !== null;
+        const saved = await data.upsertProduct({
+          id: existing?.id,
+          name: r.name,
+          supplierId: r.supplier ? supplierId : existing?.supplierId ?? null,
+          supplierCode: keep(["code"], r.code, existing?.supplierCode, null),
+          baseUnit: keep(["packSize", "unit"], r.baseUnit, existing?.baseUnit, "g"),
+          packSize: keep(["packSize"], r.packSize, existing?.packSize, null),
+          packCostPence: keep(["packCost"], r.packCostPence, existing?.packCostPence, null),
+          eachWeightG: keep(["eachWeight"], r.eachWeightG, existing?.eachWeightG, null),
+          densityGPerMl: existing?.densityGPerMl ?? null,
+          allergens: allergensFromFile ? r.allergens! : existing?.allergens ?? [],
+          allergenStatus: allergensFromFile ? (confirmed ? "complete" : "unknown") : existing?.allergenStatus ?? "unknown",
+          dietIds: r.dietIds ?? existing?.dietIds ?? [],
+          nutritionPer100: r.nutritionPer100 ? { ...(existing?.nutritionPer100 ?? {}), ...r.nutritionPer100 } : existing?.nutritionPer100 ?? {},
+        });
+        if (existing) out.updated++; else out.added++;
+        const sup = saved.supplierId ? supplierName.get(saved.supplierId) ?? null : null;
+        const c = matchKey.code(sup, saved.supplierCode);
+        if (c) byCode.set(c, saved);
+        byName.set(matchKey.name(sup, saved.name), saved);
+      } catch (e) {
+        if (!data.isDataError(e)) console.error(e);
+        out.failed.push({ line: r.line, name: r.name, error: data.isDataError(e) ? e.message : "Couldn't be saved." });
+      }
+    }
+    return out;
+  });
 }
 
 // ---------- menus ----------
