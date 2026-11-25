@@ -1,0 +1,15 @@
+-- Run on a scratch database: stub, every migration, then this file.
+\set ON_ERROR_STOP 0
+set search_path = spec, public;
+set role anon;
+\echo == a guest joins, then joins again with new details (expect one row)
+select join_early_list('Chef@Example.com', 'Sam', 'The Arms Group', 12);
+select join_early_list('chef@example.com', 'Sam K', 'The Arms Group', 14);
+\echo == a guest cannot read the list
+select count(*) from early_list;
+\echo == bad input is refused
+select join_early_list('not-an-email', 'Sam', 'X', 3);
+select join_early_list('a@b.co', 'Sam', 'X', 0);
+reset role;
+\echo == what is stored
+select email, name, sites from early_list;

@@ -217,3 +217,20 @@ export async function inviteMemberAction(input: { email: string; name: string; r
 export async function updateMemberAction(userId: string, patch: { role?: User["role"]; brandId?: string | null; status?: "active" | "disabled" }): Promise<ActionResult> {
   return run(() => data.updateMember(userId, patch));
 }
+
+// Landing page early list. A hidden "website" field catches simple bots; 5 tries per 10 minutes per address.
+export async function joinEarlyListAction(_prev: { ok: boolean; message: string } | null, form: FormData): Promise<{ ok: boolean; message: string }> {
+  if (String(form.get("website") ?? "")) return { ok: true, message: "Thanks, you're on the list." };
+  const h = await headers();
+  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  if (!rateLimit(`early:${ip}`, 5, 10 * 60_000)) return { ok: false, message: "That's a few tries in a row. Please wait a few minutes and try again." };
+  try {
+    await data.joinEarlyList({
+      email: String(form.get("email") ?? ""), name: String(form.get("name") ?? ""),
+      company: String(form.get("company") ?? ""), sites: Number(form.get("sites") ?? 0),
+    });
+    return { ok: true, message: "Thanks, you're on the list. We'll be in touch." };
+  } catch (e) {
+    return { ok: false, message: data.isDataError(e) ? e.message : "We couldn't save that just now. Please try again in a minute." };
+  }
+}

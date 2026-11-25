@@ -12,6 +12,7 @@ import type {
 import { effectiveLive, guestVersion, missingInfo, slugify } from "../publishing";
 import { save, store } from "./store";
 import { itemRows, rowsProblem, specSections } from "@/lib/menu-rows";
+import { earlyListProblem, type EarlyListInput } from "@/lib/early-list";
 
 export class DataError extends Error {}
 
@@ -775,5 +776,18 @@ export async function updateMember(userId: string, patch: { role?: User["role"];
     if (!admins.length) throw new DataError("There must always be at least one admin.");
   }
   Object.assign(u, patch);
+  save();
+}
+
+/** Landing page early list. Signing up twice with the same email just updates the details. */
+export async function joinEarlyList(input: EarlyListInput): Promise<void> {
+  const problem = earlyListProblem(input);
+  if (problem) throw new DataError(problem);
+  const s = store();
+  const email = input.email.trim().toLowerCase();
+  const entry = { email, name: input.name.trim(), company: input.company.trim(), sites: input.sites, createdAt: new Date().toISOString() };
+  const i = s.earlyList.findIndex((e) => e.email === email);
+  if (i >= 0) s.earlyList[i] = { ...entry, createdAt: s.earlyList[i].createdAt };
+  else s.earlyList.push(entry);
   save();
 }

@@ -232,3 +232,6 @@ export interface SiteMenus {
   allergens: Allergen[];
   diets: Diet[];
 }
+
+/** Someone who asked to hear when Onpass opens (landing page form). */
+export interface EarlyListEntry { email: string; name: string; company: string; sites: number; createdAt: string }

@@ -13,6 +13,7 @@ import type {
 import { effectiveLive, guestVersion, missingInfo, slugify } from "../publishing";
 import { supabaseAdmin } from "../supabase/admin";
 import { itemRows, rowsProblem, specSections } from "@/lib/menu-rows";
+import { earlyListProblem, type EarlyListInput } from "@/lib/early-list";
 
 export class DataError extends Error {}
 
@@ -1082,4 +1083,15 @@ export async function updateMember(userId: string, patch: { role?: User["role"];
   if (patch.status) row.status = patch.status;
   const { error } = await sb.from("memberships").update(row).eq("org_id", await orgId()).eq("user_id", userId);
   if (error) fail(error);
+}
+
+/** Landing page early list, through a locked-down database function (guests can add, nobody can read back). */
+export async function joinEarlyList(input: EarlyListInput): Promise<void> {
+  const problem = earlyListProblem(input);
+  if (problem) throw new DataError(problem);
+  const { sb } = await session();
+  const { error } = await sb.rpc("join_early_list", {
+    p_email: input.email.trim().toLowerCase(), p_name: input.name.trim(), p_company: input.company.trim(), p_sites: input.sites,
+  });
+  if (error) throw new DataError("We couldn't save that just now. Please try again in a minute.");
 }

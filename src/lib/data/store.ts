@@ -3,7 +3,7 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
-import type { Allergen, Brand, Diet, Menu, Organisation, Product, Publication, Recipe, Site, Supplier, User } from "../types";
+import type { Allergen, Brand, Diet, EarlyListEntry, Menu, Organisation, Product, Publication, Recipe, Site, Supplier, User } from "../types";
 import * as seed from "./seed";
 
 export interface StoreData {
@@ -18,6 +18,7 @@ export interface StoreData {
   brands: Brand[];
   sites: Site[];
   publications: Publication[];
+  earlyList: EarlyListEntry[];
 }
 
 const DIR = path.join(process.cwd(), ".data");
@@ -36,6 +37,7 @@ function fresh(): StoreData {
     brands: seed.seedBrands,
     sites: seed.seedSites,
     publications: [],
+    earlyList: [],
   });
 }
 
@@ -49,6 +51,7 @@ export function store(): StoreData {
       loaded.brands ??= structuredClone(seed.seedBrands);
       loaded.sites ??= structuredClone(seed.seedSites);
       loaded.publications ??= [];
+      loaded.earlyList ??= [];
       for (const m of loaded.menus) m.brandIds ??= [];
       g.__specStore = loaded;
     } catch {
