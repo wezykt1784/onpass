@@ -8,7 +8,7 @@ import { AllergenBars, RagChip } from "@/components/ui";
 import { photoUrl } from "@/lib/supabase/env";
 import { BackLink } from "./back-link";
 
-export const metadata: Metadata = { title: "Spec" };
+export const metadata: Metadata = { title: "Recipe spec" };
 
 export default async function SpecView({ params }: PageProps<"/c/[org]/recipe/[id]">) {
   const { org, id } = await params;

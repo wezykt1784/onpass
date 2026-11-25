@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { BRAND } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: { default: "Spec", template: "%s · Spec" },
-  description: "Recipes, spec books and allergen menus for multi-site kitchens.",
+  title: { default: BRAND.name, template: `%s · ${BRAND.name}` },
+  description: BRAND.tagline,
+  openGraph: { title: BRAND.name, description: BRAND.tagline, images: ["/og.png"] },
 };
 
 export const viewport: Viewport = { themeColor: "#3a3936" };

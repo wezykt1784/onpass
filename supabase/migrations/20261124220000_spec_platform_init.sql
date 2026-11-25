@@ -1,4 +1,4 @@
--- Spec platform (Ten Kites rebuild), first migration.
+-- Onpass platform, first migration.
 -- Lives in its own schema "spec" so it never touches the existing public tables
 -- (recipes, photos, finance hub) in this project. Nothing here alters auth.* or public.*.
 
@@ -6,7 +6,7 @@ create schema if not exists spec;
 grant usage on schema spec to anon, authenticated, service_role;
 set search_path = spec, public, extensions;
 
--- Schema for the Ten Kites rebuild (spec book + guest allergens)
+-- Schema for Onpass (spec book + guest allergens)
 -- Postgres on Supabase. Access by row level security (RLS) on every table.
 -- Times are timestamptz (UTC). Money is integer pence + currency.
 -- Run as the first migration: supabase/migrations/0001_init.sql
@@ -39,7 +39,7 @@ create table organisations (
   updated_at timestamptz not null default now()
 );
 
--- Brand = Ten Kites "brand unit". parent_brand_id makes it a "menu group".
+-- Brand = a trading brand. parent_brand_id makes it a "menu group".
 create table brands (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references organisations(id) on delete cascade,
@@ -56,7 +56,7 @@ create table brands (
 create index on brands (org_id);
 create index on brands (parent_brand_id);
 
--- Site = one pub or hotel. Ten Kites has no site level; we add it for per-site QR codes.
+-- Site = one pub or hotel, with its own guest address and QR code.
 create table sites (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references organisations(id) on delete cascade,
@@ -434,7 +434,7 @@ create table menu_row_prices (
 );
 create index on menu_row_prices (price_band_id);
 
--- 250 item cap, same as Ten Kites, keeps PDFs and guest pages sane.
+-- 250 item cap keeps PDFs and guest pages sane.
 create or replace function menu_rows_cap() returns trigger
 language plpgsql set search_path = spec, public as $$
 begin

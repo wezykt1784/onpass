@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Onpass</title>
+  <rect width="64" height="64" rx="14" fill="#3d3fc4"/>
+  <circle cx="32" cy="27" r="13" fill="none" stroke="#ffffff" stroke-width="6"/>
+  <rect x="12" y="45" width="40" height="6" rx="3" fill="#ffffff"/>
+</svg>

@@ -1,4 +1,4 @@
-// PDF spec book (S24). Same information as the Ten Kites book, our own layout, colours from tokens.json.
+// PDF spec book (S24). Our own layout, colours from tokens.json.
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +9,7 @@ import type { getSpecBookData } from "../data";
 import { uploadsDir } from "../data/store";
 import { photoUrl, useSupabase } from "../supabase/env";
 import type { Recipe } from "../types";
+import { BRAND } from "@/lib/brand";
 
 type Data = NonNullable<Awaited<ReturnType<typeof getSpecBookData>>>;
 const c = tokens.color;
@@ -150,8 +151,8 @@ function SpecBook({ d, photos, logo }: { d: Data; photos: Map<string, Photo>; lo
   const printed = dateUk(new Date().toISOString());
   const book = d.menu.displayName ? `${d.menu.name}` : d.menu.name;
   return (
-    <Document title={`${d.menu.name} spec book`} author={d.org.name} creator="Spec">
-      {/* Cover: logo and title in the top third, where chefs used to a Ten Kites book look for them. */}
+    <Document title={`${d.menu.name} spec book`} author={d.org.name} creator={BRAND.name}>
+      {/* Cover: logo and title in the top third, where chefs expect to find them. */}
       <Page size="A4" orientation="landscape" style={[s.page, { alignItems: "center", paddingTop: 90 }]}>
         {/* eslint-disable-next-line jsx-a11y/alt-text -- PDF images have no alt attribute */}
         {logo && <Image src={logo} style={{ maxWidth: 300, maxHeight: 130, objectFit: "contain", marginBottom: 24 }} />}

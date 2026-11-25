@@ -5,6 +5,7 @@ import { BottomNav, SidebarNav } from "@/components/sidebar";
 import { ListSkeleton } from "@/components/ui";
 import { currentUser, getOrg, signedInWithoutOrg } from "@/lib/data";
 import { signOut } from "@/lib/actions";
+import { BRAND } from "@/lib/brand";
 
 async function UserBox() {
   const user = await currentUser();
@@ -30,7 +31,8 @@ export default function AppLayout({ children }: LayoutProps<"/app">) {
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-bg focus:px-3 focus:py-2">Skip to content</a>
       <aside className="sticky top-0 hidden h-screen flex-col justify-between border-r border-border bg-bg p-4 md:flex">
         <div>
-          <p className="mb-6 px-3 text-lg font-bold tracking-tight">Spec</p>
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny static SVG mark */}
+          <p className="mb-6 flex items-center gap-2 px-3 text-lg font-bold tracking-tight"><img src="/icon.svg" alt="" width={24} height={24} />{BRAND.name}</p>
           <Suspense fallback={null}><SidebarNav /></Suspense>
         </div>
         <Suspense fallback={null}><UserBox /></Suspense>
