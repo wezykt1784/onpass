@@ -5,14 +5,15 @@ import Link from "next/link";
 import { Download, FileUp } from "lucide-react";
 import { uploadProductsAction, type UploadOutcome } from "@/lib/actions";
 import {
-  FIELD_LABELS, MAX_UPLOAD_ROWS, TEMPLATE_CSV, UPLOAD_CHUNK, findHeader, matchColumns, matchKey, readRow,
-  type UploadField, type UploadRow,
+  FIELD_LABELS, MAX_UPLOAD_ROWS, TEMPLATE_CSV, UPLOAD_CHUNK, ZONAL_LABEL, detectZonal, findHeader, matchColumns, matchKey, readRow,
+  readZonalRow, zonalPresent, type UploadField, type UploadRow, type ZonalKind,
 } from "@/lib/product-upload";
 import type { Allergen, Diet } from "@/lib/types";
-import { Button, Card, Notice, Pill } from "@/components/ui";
+import { Button, Card, Notice, Pill, inputClass } from "@/components/ui";
 
 type Existing = { name: string; supplier: string | null; code: string | null };
-type Preview = { line: number; name: string; row: UploadRow | null; problems: string[]; action: "new" | "update" | "skip"; repeat: boolean };
+type Preview = { line: number; name: string; row: UploadRow | null; problems: string[]; warnings: string[]; action: "new" | "update" | "skip"; repeat: boolean };
+type Sheet = { headers: string[]; body: unknown[][]; first: number; zonal: ZonalKind | null };
 
 async function readFile(file: File): Promise<unknown[][]> {
   const lower = file.name.toLowerCase();
@@ -31,9 +32,8 @@ async function readFile(file: File): Promise<unknown[][]> {
 export function ProductUpload({ allergens, diets, existing }: { allergens: Allergen[]; diets: Diet[]; existing: Existing[] }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [columns, setColumns] = useState<Partial<Record<UploadField, number>> | null>(null);
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [rows, setRows] = useState<Preview[]>([]);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [supplier, setSupplier] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<UploadOutcome | null>(null);
@@ -50,7 +50,7 @@ export function ProductUpload({ allergens, diets, existing }: { allergens: Aller
     return { byCode, byName };
   }, [existing]);
 
-  const reset = () => { setError(null); setColumns(null); setRows([]); setResult(null); setProgress(null); setConfirmed(false); };
+  const reset = () => { setError(null); setSheet(null); setResult(null); setProgress(null); setConfirmed(false); };
 
   const onFile = async (file: File | undefined) => {
     reset();
@@ -60,35 +60,52 @@ export function ProductUpload({ allergens, diets, existing }: { allergens: Aller
     let grid: unknown[][];
     try { grid = await readFile(file); } catch (e) { return setError(e instanceof Error ? e.message : "That file couldn't be read."); }
     const h = findHeader(grid);
-    if (h < 0) return setError("We couldn't find a heading row with a product name column. The first row should have headings like Product name, Supplier code, Pack size, Pack cost.");
-    const heads = grid[h].map((c) => (c == null ? "" : String(c).trim()));
-    const cols = matchColumns(heads);
-    const body = grid.slice(h + 1).filter((r) => r.some((c) => c != null && String(c).trim() !== ""));
+    const firstRow = (grid[0] ?? []).map((c) => (c == null ? "" : String(c).trim()));
+    const zonal = detectZonal(firstRow);
+    if (h < 0 && !zonal) return setError("We couldn't find a heading row with a product name column. The first row should have headings like Product name, Supplier code, Pack size, Pack cost, or be a Zonal price change, nutrition or allergen template.");
+    const head = zonal ? 0 : h;
+    const heads = grid[head].map((c) => (c == null ? "" : String(c).trim()));
+    let body = grid.slice(head + 1).filter((r) => r.some((c) => c != null && String(c).trim() !== ""));
     if (body.length === 0) return setError("The file has headings but no products under them.");
     if (body.length > MAX_UPLOAD_ROWS) return setError(`That's ${body.length} rows. Upload up to ${MAX_UPLOAD_ROWS} at a time.`);
+    if (zonal === "nutrition") {
+      // Zonal lists a product once per supplier item; the default item's row should win.
+      const def = heads.findIndex((x) => x.toLowerCase() === "defaultyn");
+      body = [...body].sort((a, b) => Number(String(a[def] ?? "").toUpperCase() === "Y") - Number(String(b[def] ?? "").toUpperCase() === "Y"));
+    }
+    setSheet({ headers: heads, body, first: head + 2, zonal });
+  };
+
+  const columns = useMemo(() => (sheet && !sheet.zonal ? matchColumns(sheet.headers) : null), [sheet]);
+  const needsSupplier = !!sheet && (sheet.zonal === "price" || (!sheet.zonal && columns?.supplier === undefined));
+  const rows = useMemo<Preview[]>(() => {
+    if (!sheet) return [];
     const seen = new Set<string>();
-    const preview = body.map((cells, i): Preview => {
-      const line = h + i + 2;
-      const { row, problems } = readRow(cells, line, cols, allergens, diets);
-      const name = row?.name ?? String(cells[cols.name!] ?? "").trim();
-      if (!row) return { line, name, row, problems, action: "skip", repeat: false };
+    const fallback = supplier.trim() || null;
+    return sheet.body.map((cells, i): Preview => {
+      const line = sheet.first + i;
+      const read = sheet.zonal
+        ? readZonalRow(sheet.zonal, cells, sheet.headers, line, allergens, diets, fallback)
+        : { ...readRow(cells, line, columns!, allergens, diets), warnings: [] as string[] };
+      const row = read.row && !read.row.supplier && fallback ? { ...read.row, supplier: fallback } : read.row;
+      const name = row?.name ?? String((sheet.zonal ? "" : cells[columns!.name!]) ?? "").trim();
+      if (!row) return { line, name, row, problems: read.problems, warnings: read.warnings, action: "skip", repeat: false };
       const ck = matchKey.code(row.supplier, row.code);
       const nk = matchKey.name(row.supplier, row.name);
-      const repeat = seen.has(ck ?? nk);
-      seen.add(ck ?? nk);
+      const repeat = seen.has(nk);
+      seen.add(nk);
       const action = (ck && known.byCode.has(ck)) || known.byName.has(nk) ? "update" : "new";
-      return { line, name, row, problems, action, repeat };
+      return { line, name, row, problems: read.problems, warnings: read.warnings, action, repeat };
     });
-    setHeaders(heads);
-    setColumns(cols);
-    setRows(preview);
-  };
+  }, [sheet, supplier, columns, allergens, diets, known]);
 
   const ready = rows.filter((r) => r.row);
   const counts = { new: ready.filter((r) => r.action === "new").length, update: ready.filter((r) => r.action === "update").length, skip: rows.length - ready.length };
-  const hasAllergens = columns && (columns.contains !== undefined || columns.mayContain !== undefined);
-  const present = columns ? (Object.keys(columns) as UploadField[]) : [];
-  const ignored = headers.filter((hd, i) => hd && !Object.values(columns ?? {}).includes(i));
+  const hasAllergens = sheet?.zonal === "allergen" || (columns && (columns.contains !== undefined || columns.mayContain !== undefined));
+  const present: UploadField[] = sheet?.zonal ? zonalPresent(sheet.zonal) : columns ? (Object.keys(columns) as UploadField[]) : [];
+  if (needsSupplier && supplier.trim() && !present.includes("supplier")) present.push("supplier");
+  const ignored = sheet && !sheet.zonal ? sheet.headers.filter((hd, i) => hd && !Object.values(columns ?? {}).includes(i)) : [];
+  const warned = rows.filter((r) => r.row && r.warnings.length).length;
 
   const upload = () => start(async () => {
     setError(null);
@@ -114,7 +131,7 @@ export function ProductUpload({ allergens, diets, existing }: { allergens: Aller
           <input ref={input} id="upload-file" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only" onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
           <Button type="button" onClick={() => input.current?.click()} disabled={pending}><FileUp aria-hidden />Choose a file</Button>
-          <span className="text-sm text-text-muted">{fileName ?? "Excel (.xlsx) or CSV, up to 2,000 products."}</span>
+          <span className="text-sm text-text-muted">{fileName ?? "Excel (.xlsx) or CSV, up to 2,000 products. Zonal price change, nutrition and allergen templates work as they are."}</span>
           <a className="ml-auto inline-flex items-center gap-1.5 text-sm font-semibold underline" href={template} download="onpass-products-template.csv">
             <Download aria-hidden className="size-4" />Download the template
           </a>
@@ -129,11 +146,21 @@ export function ProductUpload({ allergens, diets, existing }: { allergens: Aller
 
       {error && <Notice tone="danger">{error}</Notice>}
 
-      {columns && !result && (
+      {sheet && !result && (
         <>
           <Card className="grid gap-3 p-5 text-sm">
             <h2 className="text-lg">What we found</h2>
-            <p><span className="font-semibold">Columns read:</span> {present.map((f) => FIELD_LABELS[f]).join(", ")}.</p>
+            {sheet.zonal
+              ? <p><span className="font-semibold">Recognised as the {ZONAL_LABEL[sheet.zonal]}.</span> {sheet.zonal === "price" ? "Updates pack sizes and prices (the new price where there is one)." : sheet.zonal === "nutrition" ? "Updates nutrition per 100 g. Figures that can't be per 100 g are skipped." : "Updates allergens, diets and the cost per kg, litre or item."} Products match on supplier and code, then supplier and name, so you can upload all three templates one after another.</p>
+              : <p><span className="font-semibold">Columns read:</span> {present.map((f) => FIELD_LABELS[f]).join(", ")}.</p>}
+            {needsSupplier && (
+              <div className="grid max-w-sm gap-1">
+                <label htmlFor="file-supplier" className="font-semibold">Supplier for this file</label>
+                <input id="file-supplier" className={inputClass} value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="For example Brakes" maxLength={120} />
+                <span className="text-text-muted">The file doesn&apos;t say who the supplier is.{sheet.zonal === "price" ? " Rows can't be uploaded without one." : ""}</span>
+              </div>
+            )}
+            {warned > 0 && <p className="text-text-muted">{warned} rows will upload with a note; see What happens below.</p>}
             {ignored.length > 0 && <p className="text-text-muted"><span className="font-semibold">Ignored:</span> {ignored.join(", ")}.</p>}
             <p aria-live="polite"><span className="font-semibold">{counts.new}</span> new, <span className="font-semibold">{counts.update}</span> to update, <span className="font-semibold">{counts.skip}</span> with problems (not uploaded).</p>
             {hasAllergens ? (
@@ -185,6 +212,7 @@ export function ProductUpload({ allergens, diets, existing }: { allergens: Aller
                         <>
                           <Pill tone={r.action === "new" ? "live" : "draft"}>{r.action === "new" ? "New" : "Updates existing"}</Pill>
                           {r.repeat && <p className="mt-1 text-xs text-text-muted">Same product as an earlier row; this row wins.</p>}
+                          {r.warnings.map((w) => <p key={w} className="mt-1 text-xs text-text-muted">{w}</p>)}
                         </>
                       )}
                     </td>

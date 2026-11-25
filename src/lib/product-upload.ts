@@ -214,3 +214,152 @@ export const TEMPLATE_CSV = [
   "Brioche bun,Brakes,BR-2210,24 each,9.60,75,\"Wheat, Eggs, Milk\",Sesame,V,290,7.5,1",
   "Rapeseed oil,Booker,BK-0450,5l,11.99,,,,\"VG, V\",824,92,0",
 ].join("\n");
+
+// ---------- Zonal exports (Price change, Nutrition and Allergen templates) ----------
+
+export type ZonalKind = "price" | "nutrition" | "allergen";
+export const ZONAL_LABEL: Record<ZonalKind, string> = { price: "Zonal price change template", nutrition: "Zonal nutrition template", allergen: "Zonal allergen template" };
+
+/** Which Zonal export this is, from its heading row. */
+export function detectZonal(headers: string[]): ZonalKind | null {
+  const h = new Set(headers.map((x) => x.trim().toLowerCase()));
+  if (h.has("supplieritemname") && h.has("packsizename") && h.has("currentprice")) return "price";
+  if (h.has("energykcal") && h.has("supplierproduct")) return "nutrition";
+  if (h.has("cerealscontgluten") && h.has("supplierproduct")) return "allergen";
+  return null;
+}
+
+/** The fields each Zonal export fills in; anything else on an existing product is left alone. */
+export function zonalPresent(kind: ZonalKind): UploadField[] {
+  if (kind === "price") return ["name", "code", "supplier", "packSize", "unit", "packCost"];
+  if (kind === "nutrition") return ["name", "supplier", "code", "kcal", "fat", "salt"];
+  // The allergen template's "costs 1.96 per KG" also gives a usable price.
+  return ["name", "supplier", "contains", "mayContain", "diets", "packSize", "unit", "packCost"];
+}
+
+const CONTAINER = /\b(BOT|BOTTLE|TIN|BAG|TUB|JAR|BOX|CASE|PACK|PKT|PUNNET|BUNCH|SINGLE|EACH|ITEM|ITEMS|PORTION|PORTIONS|EA)\b/g;
+const PACK_UNITS: Record<string, [BaseUnit, number]> = {
+  G: ["g", 1], GM: ["g", 1], GR: ["g", 1], K: ["g", 1000], KG: ["g", 1000], ML: ["ml", 1], CL: ["ml", 10], L: ["ml", 1000],
+  LT: ["ml", 1000], LTR: ["ml", 1000], LITR: ["ml", 1000], LITRE: ["ml", 1000], LITER: ["ml", 1000], DZ: ["ea", 12],
+};
+
+/** Zonal pack size names: "1X1KG", "6 x100g", "72X76G", "1X 15DZ", "70CL BOT", "TUB 4.3KG", "PACK 40", "KG", "EA", "Box24". */
+export function readZonalPack(raw: string): { unit: BaseUnit; size: number } | null {
+  const s0 = raw.toUpperCase().replace(/,/g, ".").trim()
+    .replace(/\b(BOX|CASE|PACK|TUB|BAG|TIN)(?=\d)/g, "$1 ").replace(/(\d)(BOX|CASE|PACK|TUB|EACH|BAG|TIN)\b/g, "$1 $2")
+    .replace(/^PINT$/, "568ML");
+  if (!s0) return null;
+  const s = s0.replace(CONTAINER, " ").replace(/\s+/g, " ").trim();
+  if (!s) return { unit: "ea", size: 1 }; // EA, SINGLE, PUNNET, BUNCH, CASE
+  const num = "(\\d+(?:\\.\\d+)?)";
+  const unit = (u: string | undefined) => (u ? PACK_UNITS[u.replace(/\s/g, "")] : undefined);
+  let m = s.match(new RegExp(`^${num}\\s*X\\s*${num}\\s*([A-Z]+)?$`));
+  if (m) {
+    const u = unit(m[3]);
+    if (m[3] && !u) return null;
+    return { unit: u?.[0] ?? "ea", size: Math.round(Number(m[1]) * Number(m[2]) * (u?.[1] ?? 1) * 1000) / 1000 };
+  }
+  m = s.match(new RegExp(`^${num}\\s*([A-Z]+)\\s*X\\s*${num}$`)); // 90GX30
+  if (m && unit(m[2])) return { unit: unit(m[2])![0], size: Number(m[1]) * Number(m[3]) * unit(m[2])![1] };
+  m = s.match(new RegExp(`^${num}?\\s*([A-Z]+)?$`));
+  if (!m) return null;
+  if (!m[1] && m[2]) { const u = unit(m[2]); return u ? { unit: u[0], size: u[1] } : null; } // "KG", "LITR"
+  if (m[1] && !m[2]) return /^\d+$/.test(m[1]) || s0.match(CONTAINER) ? { unit: "ea", size: Number(m[1]) } : null; // "48", "10 PACK"; "1.2" is a guess
+  const u = unit(m[2]);
+  return u ? { unit: u[0], size: Math.round(Number(m[1]) * u[1] * 1000) / 1000 } : null;
+}
+
+const ZONAL_ALLERGENS: Record<string, string> = {
+  peanuts: "peanuts", nuts: "nuts", cerealscontgluten: "gluten", milk: "milk", sesame: "sesame", soya: "soya",
+  molluscs: "molluscs", sulphites: "sulphites", mustard: "mustard", celery: "celery", fish: "fish", lupin: "lupin",
+  crustaceans: "crustaceans", eggs: "eggs",
+};
+const NUTRIENTS: [string, string, number][] = [
+  ["energykcal", "kcal", 900], ["energykj", "kj", 3800], ["fat", "fat_g", 100], ["saturates", "saturates_g", 100],
+  ["carbohydrate", "carbs_g", 100], ["sugars", "sugars_g", 100], ["protein", "protein_g", 100], ["fibre", "fibre_g", 100], ["salt", "salt_g", 100],
+];
+
+export interface ZonalRead extends ReadRow { warnings: string[]; isDefault: boolean }
+
+/** One row of a Zonal export. `supplier` is used when the file has no Supplier column (the price change template). */
+export function readZonalRow(kind: ZonalKind, cells: unknown[], headers: string[], line: number, allergens: Allergen[], diets: Diet[], supplier: string | null): ZonalRead {
+  const idx = new Map(headers.map((h, i) => [h.trim().toLowerCase(), i]));
+  const get = (h: string) => { const i = idx.get(h); const v = i === undefined ? "" : cells[i]; return v == null ? "" : String(v).replace(/&amp;/g, "&").trim(); };
+  const problems: string[] = [];
+  const warnings: string[] = [];
+  const isDefault = get("defaultyn").toUpperCase() === "Y";
+  const name = (kind === "price" ? get("supplieritemname") : get("supplierproduct")).replace(/\s+/g, " ");
+  if (!name) return { row: null, problems: ["No product name."], warnings, isDefault };
+  const dept = get("stockdepartment").toUpperCase();
+  if (dept && dept !== "FOOD") return { row: null, problems: [`Not food (${dept.toLowerCase()}), so not added.`], warnings, isDefault };
+  const sup = (get("supplier") || supplier || "").trim() || null;
+  const titleSup = sup ? sup.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()) : null;
+  const row: UploadRow = {
+    line, name: name.slice(0, 160), supplier: titleSup, code: null, baseUnit: "g", packSize: null, packCostPence: null,
+    eachWeightG: null, allergens: null, dietIds: null, nutritionPer100: null,
+  };
+
+  if (kind === "price") {
+    row.code = get("productcode").slice(0, 60) || null;
+    const pack = readZonalPack(get("packsizename"));
+    if (pack) { row.baseUnit = pack.unit; row.packSize = pack.size; }
+    else warnings.push(`Pack size "${get("packsizename")}" couldn't be read, so this product won't cost recipes until you add it.`);
+    const price = readNumber(get("newprice")) ?? readNumber(get("currentprice"));
+    if (price === undefined || price == null) problems.push("No price.");
+    else row.packCostPence = Math.round(price * 100);
+    if (!sup) problems.push("No supplier. Type the supplier for this file above.");
+  }
+
+  if (kind === "nutrition") {
+    row.code = get("productcode").slice(0, 60) || null;
+    const values: Record<string, number> = {};
+    let odd: string | null = null;
+    for (const [col, key, max] of NUTRIENTS) {
+      const n = readNumber(get(col));
+      if (n == null || n === undefined) continue;
+      if (n > max && !odd) odd = `${n} for ${col.replace("energy", "energy ")}`;
+      values[key] = n;
+    }
+    const any = Object.values(values).some((v) => v > 0);
+    if (!any) warnings.push("No nutrition filled in for this product in Zonal.");
+    else if (odd) warnings.push(`Nutrition skipped: ${odd} doesn't look like a per 100 g figure. Check it in Zonal.`);
+    else row.nutritionPer100 = values;
+  }
+
+  if (kind === "allergen") {
+    const codes = get("supplierstockcodes").split(",").map((c) => c.trim()).filter(Boolean);
+    if (codes.length === 1) row.code = codes[0].slice(0, 60);
+    const list: { allergenId: string; level: AllergenLevel }[] = [];
+    const add = (code: string, level: AllergenLevel) => {
+      const a = allergens.find((x) => x.code === code);
+      if (a && !list.some((x) => x.allergenId === a.id)) list.push({ allergenId: a.id, level });
+    };
+    let filled = get("noallergens").toUpperCase() === "Y";
+    for (const [col, code] of Object.entries(ZONAL_ALLERGENS)) {
+      const v = get(col).toUpperCase();
+      if (v === "Y") { add(code, "contains"); filled = true; }
+      else if (v === "M") { add(code, "may_contain"); filled = true; }
+    }
+    for (const [col, parent] of [["typeofnutslist", "nuts"], ["typeofglutenlist", "gluten"]] as const) {
+      const p = list.find((x) => allergens.find((a) => a.id === x.allergenId)?.code === parent);
+      for (const t of get(col).split(/[,;/]+/).map((x) => x.trim()).filter(Boolean)) {
+        const a = allergenFromText(t, allergens);
+        if (a && a.code !== parent && p) add(a.code, p.level);
+      }
+    }
+    if (filled) row.allergens = list;
+    else warnings.push("Allergens not filled in for this product in Zonal, so they stay not confirmed.");
+    const dietIds: string[] = [];
+    for (const [col, code] of [["suitableforvegetarian", "vegetarian"], ["suitableforvegan", "vegan"], ["suitableforcoeliacs", "gluten_free"]] as const) {
+      const d = diets.find((x) => x.code === code);
+      if (d && get(col).toUpperCase() === "Y") dietIds.push(d.id);
+    }
+    row.dietIds = filled ? dietIds : null;
+    // "costs 1.96 per KG": a price per unit, which is enough to cost recipes.
+    const c = get("costpersize").match(/costs\s+([\d.]+)\s+per\s+([A-Z]+)/i);
+    const u = c ? ({ KG: ["g", 1000], G: ["g", 1], LITRE: ["ml", 1000], LTR: ["ml", 1000], ML: ["ml", 1], EACH: ["ea", 1] } as Record<string, [BaseUnit, number]>)[c[2].toUpperCase()] : undefined;
+    if (c && u) { row.baseUnit = u[0]; row.packSize = u[1]; row.packCostPence = Math.round(Number(c[1]) * 100); }
+  }
+
+  return { row: problems.length ? null : row, problems, warnings, isDefault };
+}

@@ -9,6 +9,12 @@ test.describe("IMP recipe import", () => {
     await expect(page.getByRole("heading", { name: "Import recipes" })).toBeVisible();
     await expect(page.getByText(/2 dishes and 3 batch recipes/)).toBeVisible();
     await expect(page.getByText(/1 dish keeps the allergens you checked/)).toBeVisible();
+    await page.getByText("Preview the recipe cards (2)").click();
+    await page.getByText("Beetroot cured trout", { exact: true }).first().click();
+    const card = page.getByRole("article", { name: "Recipe card preview: Beetroot cured trout" });
+    await expect(card).toContainText("Horseradish cream (batch recipe)");
+    await expect(card).toContainText("Contains: Cereals containing gluten, Fish, Milk");
+    await expect(card.getByRole("img", { name: "Beetroot cured trout" })).toBeVisible();
     await page.getByLabel("Show all").check();
     // salt must never quietly become a product with more in it
     await expect(page.getByLabel("sea salt")).toHaveValue("");

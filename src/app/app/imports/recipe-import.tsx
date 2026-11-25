@@ -8,6 +8,7 @@ import { UPLOAD_CHUNK, type UploadRow } from "@/lib/product-upload";
 import { BOOK_NAMES, applyChoices, buildPlan, catalogueKey, type CatalogueItem, type OldRecipe } from "@/lib/recipe-import";
 import type { Allergen, BaseUnit } from "@/lib/types";
 import { Button, Card, Notice, Pill, inputClass } from "@/components/ui";
+import { RecipeCardPreview } from "./recipe-card-preview";
 
 type PriceRow = { name: string; pack?: string; price?: number; per?: number; dim?: string; sup?: string; at?: number };
 
@@ -176,6 +177,13 @@ export function RecipeImport({ old, allergens, products }: { old: OldRecipe[]; a
           {plan.dishes.length} dishes and {Object.keys(plan.batches).length} batch recipes (one per component, shared where two dishes use the same one).
           {" "}{checked} {checked === 1 ? "dish keeps" : "dishes keep"} the allergens you checked against Zonal, as dish-level allergen notes.
         </p>
+        <details>
+          <summary className="cursor-pointer font-semibold underline">Preview the recipe cards ({plan.dishes.length})</summary>
+          <p className="mt-2 text-text-muted">How each dish will come across, with its batch recipes, method and allergens. Open one to see its photo. Pick the ingredient matches below first: the cards show the ingredient names, and the matches decide which products they link to.</p>
+          <div className="mt-2 grid gap-2">
+            {plan.dishes.map((d) => <RecipeCardPreview key={d.oldId} dish={d} batches={plan.batches} allergens={allergens} />)}
+          </div>
+        </details>
         {unknownAllergenWords.length > 0 && <Notice tone="warning">These allergen words weren&apos;t recognised and won&apos;t be carried across: {unknownAllergenWords.join(", ")}. Add them by hand after the import.</Notice>}
       </Card>
 

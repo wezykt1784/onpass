@@ -71,3 +71,54 @@ test("PUP-H2 an Excel price list with a title row above the headings", async ({ 
   await expect(prod).toContainText("Milk");
   await expect(prod).not.toContainText("Not confirmed");
 });
+
+test.describe("PUZ Zonal templates", () => {
+  test.beforeEach(async ({ signInAs }) => { await signInAs("central"); });
+
+  test("PUZ-H1 price change template needs a supplier, then sets packs and new prices", async ({ page }) => {
+    await page.goto("/app/products/upload");
+    await ready(page);
+    await page.locator("#upload-file").setInputFiles(csv([
+      "SupplierItemID,ProductCode,SupplierItemName,PackSizeName,CurrentPrice,NewPrice",
+      "1,ZTBEAN,ZT BLACK BEAN,400G,0.82,",
+      "2,ZTOIL,ZT OIL EV COLD PRESSED,1x5 L,17.62,18.10",
+      "3,ZTEGG,ZT EGG FREE RANGE,1X 15DZ,45.58,",
+      "4,ZTDRESS,ZT DRESSING CAESAR,1.2,11.79,",
+    ]));
+    await expect(page.getByText("Recognised as the Zonal price change template.")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Upload 0 products/ })).toBeDisabled();
+    await page.getByLabel("Supplier for this file").fill("Zt Foods");
+    const row = (n: number) => page.getByRole("row").filter({ has: page.getByRole("cell", { name: String(n), exact: true }) });
+    await expect(row(3)).toContainText("5000 ml");
+    await expect(row(3)).toContainText("£18.10");
+    await expect(row(4)).toContainText("180 ea");
+    await expect(row(5)).toContainText("couldn't be read");
+    await page.getByRole("button", { name: "Upload 4 products" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "added" })).toContainText("4 added");
+  });
+
+  test("PUZ-H2 allergen template: Y and M columns, nut types, diets and cost per kg", async ({ page }) => {
+    await page.goto("/app/products/upload");
+    await ready(page);
+    const head = "SupplierProductID,StockDepartment,StockCategory,Supplier,SupplierStockCodes,StockItem,SupplierProduct,CostPerSize,DivisionsCanOrder,StockItems_CanOrderYN,SupplierItems_CanOrderYN,StockItems_StockCountYN,SupplierItems_StockCountYN,DataStatus,Manufacturer,ManufacturerStockCode,Supplier2,SupplierStockCode2,NoAllergens,Peanuts,Nuts,CerealsContGluten,Milk,Sesame,Soya,Molluscs,Sulphites,Mustard,Celery,Fish,Lupin,Crustaceans,Eggs,TypeOfNutsList,TypeOfGlutenList,SuitableForVegetarian,SuitableForVegan,SuitableForCoeliacs,Comments";
+    const blank = (n: number) => Array(n).fill('""').join(",");
+    await page.locator("#upload-file").setInputFiles(csv([
+      head,
+      `"1","FOOD","X","ZA FOODS","ZA1","S","ZA HAZELNUT SYRUP","costs 8.25 per LITRE","",Y,Y,Y,Y,"",${blank(4)},"","","Y","","","","","","","","","","","","",""," Hazelnut","","Y","Y","",""`,
+      `"2","FOOD","X","ZA FOODS","ZA2","S","ZA PLAIN PAPADUM","costs 6 per G","",Y,Y,Y,Y,"New",${blank(4)},${blank(15)},"","","","","",""`,
+      `"3","CONSUMABLES","X","ZA FOODS","","S","ZA UNKNOWN AMOUNT","costs 0.01 per PENCE","",Y,Y,"","","New",${blank(4)},${blank(15)},"","","","","",""`,
+    ]));
+    await expect(page.getByText("Recognised as the Zonal allergen template.")).toBeVisible();
+    const row = (n: number) => page.getByRole("row").filter({ has: page.getByRole("cell", { name: String(n), exact: true }) });
+    await expect(row(2)).toContainText("Tree nuts");
+    await expect(row(2)).toContainText("1000 ml");
+    await expect(row(3)).toContainText("Allergens not filled in");
+    await expect(row(4)).toContainText("Not food");
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Upload 2 products" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "added" })).toContainText("2 added");
+    await page.goto("/app/products?q=ZA+HAZELNUT");
+    await ready(page);
+    await expect(page.getByRole("row", { name: /ZA HAZELNUT SYRUP/ })).not.toContainText("Not confirmed");
+  });
+});

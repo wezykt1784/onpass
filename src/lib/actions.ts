@@ -164,8 +164,9 @@ export async function uploadProductsAction(rows: UploadRow[], present: UploadFie
           }
         }
         const existing = (r.code && byCode.get(matchKey.code(r.supplier, r.code)!)) || byName.get(matchKey.name(r.supplier, r.name));
+        // A column the file has wins, unless its cell is empty and the product already has a value.
         const keep = <T,>(field: UploadField[], fromFile: T, current: T | undefined, fallback: T) =>
-          field.some((f) => has.has(f)) ? fromFile : existing ? (current as T) : fallback;
+          field.some((f) => has.has(f)) && (fromFile != null || !existing) ? fromFile : existing ? (current as T) : fallback;
         const allergensFromFile = r.allergens !== null;
         const saved = await data.upsertProduct({
           id: existing?.id,
@@ -197,6 +198,15 @@ export async function uploadProductsAction(rows: UploadRow[], present: UploadFie
 }
 
 // ---------- recipe import (old spec book / recipe card files) ----------
+
+/** A dish photo from the old spec book, for the import preview. Central chefs and admins only. */
+export async function oldPhotoAction(photoId: string): Promise<ActionResult<string | null>> {
+  return run(async () => {
+    const me = await data.currentUser();
+    if (me?.role !== "org_admin" && me?.role !== "central_chef") throw new data.DataError("Only central chefs and admins can import recipes.");
+    return data.oldSpecBookPhoto(String(photoId).slice(0, 80));
+  });
+}
 
 export type ImportDishResult = { dishId: string; batchIds: Record<string, string>; created: number; updated: number; newProducts: number; photo: boolean };
 
