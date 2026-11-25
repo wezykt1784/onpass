@@ -18,7 +18,7 @@ export default defineConfig({
     launchOptions: process.env.PW_CHROME ? { executablePath: process.env.PW_CHROME, args: ["--no-sandbox"] } : {},
   },
   webServer: {
-    // Fresh demo data every run. Build first: npm run build
+    // Fresh demo data every run. Build first with the landing page on: npm run e2e does both.
     command: `rm -rf .data && NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= npx next start -p ${PORT}`,
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: false,

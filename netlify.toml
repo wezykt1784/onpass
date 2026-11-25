@@ -1,0 +1,8 @@
+# Netlify builds Next.js with its OpenNext adapter automatically; nothing to pin here.
+# Environment values (Supabase URL and key, site URL) live in the Netlify UI, not in this file.
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"

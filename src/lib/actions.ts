@@ -1,4 +1,5 @@
 "use server";
+import { PUBLIC_LANDING } from "@/lib/site-mode";
 // Server actions. Each one checks the user (inside the data layer), validates, writes, then refreshes the page.
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -224,6 +225,7 @@ export async function updateMemberAction(userId: string, patch: { role?: User["r
 
 // Landing page early list. A hidden "website" field catches simple bots; 5 tries per 10 minutes per address.
 export async function joinEarlyListAction(_prev: { ok: boolean; message: string } | null, form: FormData): Promise<{ ok: boolean; message: string }> {
+  if (!PUBLIC_LANDING) return { ok: false, message: "The early list isn't open." };
   if (String(form.get("website") ?? "")) return { ok: true, message: "Thanks, you're on the list." };
   const h = await headers();
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";

@@ -6,6 +6,8 @@ import { BRAND } from "@/lib/brand";
 import { TIERS, pounds } from "@/lib/pricing";
 import { buttonClass } from "@/components/ui";
 import { EarlyListForm } from "./early-list-form";
+import { redirect } from "next/navigation";
+import { PUBLIC_LANDING } from "@/lib/site-mode";
 
 export const metadata: Metadata = { title: { absolute: `${BRAND.name}: recipes, spec books and allergen menus in one place` } };
 
@@ -30,6 +32,7 @@ const FAQ = [
 ] as const;
 
 export default function Landing() {
+  if (!PUBLIC_LANDING) redirect("/app");
   return (
     <div className="bg-bg text-text">
       <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-5">
